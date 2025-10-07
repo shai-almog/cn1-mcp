@@ -1,0 +1,32 @@
+<configuration>
+    <springProfile name="stdio">
+        <property name="STDIO_LOG_FILE" value="cn1-mcp-stdio.log"/>
+
+        <appender name="STDIO_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${STDIO_LOG_FILE}</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${STDIO_LOG_FILE}.%d{yyyy-MM-dd}.%i.gz</fileNamePattern>
+                <maxFileSize>10MB</maxFileSize>
+                <maxHistory>7</maxHistory>
+            </rollingPolicy>
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+
+        <root level="${ROOT_LOG_LEVEL:INFO}">
+            <appender-ref ref="STDIO_FILE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!stdio">
+        <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+        <springProperty scope="context" name="LOG_FILE" source="logging.file.name"/>
+        <springProperty scope="context" name="LOG_PATH" source="logging.file.path"/>
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+        <root level="${ROOT_LOG_LEVEL:INFO}">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+</configuration>

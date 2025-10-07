@@ -26,9 +26,9 @@
 		<tag/>
 		<url/>
 	</scm>
-	<properties>
-		<java.version>25</java.version>
-	</properties>
+        <properties>
+                <java.version>21</java.version>
+        </properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -70,13 +70,20 @@
 		</dependency>
 	</dependencies>
 
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-maven-plugin</artifactId>
-				<configuration>
-					<!-- Use PropertiesLauncher so we can choose the main class at runtime -->
+        <build>
+                <plugins>
+                        <plugin>
+                                <groupId>org.apache.maven.plugins</groupId>
+                                <artifactId>maven-compiler-plugin</artifactId>
+                                <configuration>
+                                        <release>21</release>
+                                </configuration>
+                        </plugin>
+                        <plugin>
+                                <groupId>org.springframework.boot</groupId>
+                                <artifactId>spring-boot-maven-plugin</artifactId>
+                                <configuration>
+                                        <!-- Use PropertiesLauncher so we can choose the main class at runtime -->
 					<mainClass>org.springframework.boot.loader.PropertiesLauncher</mainClass>
 					<layout>ZIP</layout>
 				</configuration>

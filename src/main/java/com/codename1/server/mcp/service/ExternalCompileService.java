@@ -4,6 +4,8 @@ import com.codename1.server.mcp.dto.CompileRequest;
 import com.codename1.server.mcp.dto.CompileResponse;
 import com.codename1.server.mcp.tools.GlobalExtractor;
 import com.codename1.server.mcp.tools.Jdk8ManagerFromResource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
@@ -13,6 +15,7 @@ import java.util.*;
 
 @Service
 public class ExternalCompileService {
+    private static final Logger LOG = LoggerFactory.getLogger(ExternalCompileService.class);
     private final GlobalExtractor extractor;
     private final Jdk8ManagerFromResource jdk8;
 
@@ -23,12 +26,14 @@ public class ExternalCompileService {
 
     public CompileResponse compile(CompileRequest req) {
         try {
+            LOG.info("Starting compile request with {} files", req.files().size());
             // Extract libs once
             Path cn1   = extractor.ensureFile("/cn1libs/CodenameOne.jar");
             Path boot  = extractor.ensureFile("/cn1libs/CLDC11.jar");
 
             // Use bundled JDK 8
             Path javac = jdk8.ensureJavac8();
+            LOG.debug("Resolved javac path: {}", javac);
 
             // Write sources
             Path work = Files.createTempDirectory("cn1c-");
@@ -52,6 +57,7 @@ public class ExternalCompileService {
                 cmd.addAll(List.of("-bootclasspath", boot.toString()));
             }
             sources.forEach(s -> cmd.add(s.toString()));
+            LOG.debug("Compile command: {}", cmd);
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.directory(work.toFile());
@@ -63,8 +69,10 @@ public class ExternalCompileService {
             }
             int code = pr.waitFor();
             boolean ok = code == 0 && !out.toLowerCase().contains("error:");
+            LOG.info("Compile finished with exitCode={} success={}", code, ok);
             return new CompileResponse(ok, out, List.of());
         } catch (Exception e) {
+            LOG.error("Compile failed", e);
             return new CompileResponse(false, e.toString(), List.of());
         }
     }
