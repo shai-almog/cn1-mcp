@@ -31,10 +31,16 @@
                 <native.image.name>cn1-mcp-stdio</native.image.name>
         </properties>
 	<dependencies>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-web</artifactId>
-		</dependency>
+                <dependency>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-starter-web</artifactId>
+                </dependency>
+
+                <dependency>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-loader</artifactId>
+                        <scope>provided</scope>
+                </dependency>
 
 		<!-- AST parsing for Java -->
 		<dependency>
@@ -84,8 +90,6 @@
                                 <groupId>org.springframework.boot</groupId>
                                 <artifactId>spring-boot-maven-plugin</artifactId>
                                 <configuration>
-                                        <!-- Use PropertiesLauncher so we can choose the main class at runtime -->
-                                        <mainClass>org.springframework.boot.loader.PropertiesLauncher</mainClass>
                                         <layout>ZIP</layout>
                                 </configuration>
                         </plugin>
@@ -100,6 +104,14 @@
                         </properties>
                         <build>
                                 <plugins>
+                                        <plugin>
+                                                <groupId>org.springframework.boot</groupId>
+                                                <artifactId>spring-boot-maven-plugin</artifactId>
+                                                <configuration>
+                                                        <mainClass>com.codename1.server.mcp.McpApplication</mainClass>
+                                                        <layout>ZIP</layout>
+                                                </configuration>
+                                        </plugin>
                                         <plugin>
                                                 <groupId>org.graalvm.buildtools</groupId>
                                                 <artifactId>native-maven-plugin</artifactId>
