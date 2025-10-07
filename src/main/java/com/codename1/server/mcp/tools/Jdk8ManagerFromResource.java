@@ -79,14 +79,29 @@ public class Jdk8ManagerFromResource {
     }
 
     private Path findJdkRoot(Path base) throws IOException {
-        // If base has 'release' file, it's the root. Otherwise, look one level down.
-        if (Files.exists(base.resolve(rootMarker))) return base;
-        try (var stream = Files.list(base)) {
-            for (Path p : (Iterable<Path>) stream::iterator) {
-                if (Files.isDirectory(p) && Files.exists(p.resolve(rootMarker))) return p;
+        Path resolved = findJdkRootRecursive(base, 0);
+        return resolved != null ? resolved : base;
+    }
+
+    private Path findJdkRootRecursive(Path dir, int depth) throws IOException {
+        if (Files.exists(dir.resolve(rootMarker))) {
+            return dir;
+        }
+        if (depth >= 4) {
+            return null;
+        }
+        try (var stream = Files.list(dir)) {
+            for (Path child : (Iterable<Path>) stream::iterator) {
+                if (!Files.isDirectory(child)) {
+                    continue;
+                }
+                Path candidate = findJdkRootRecursive(child, depth + 1);
+                if (candidate != null) {
+                    return candidate;
+                }
             }
         }
-        return base; // fallback
+        return null;
     }
 
     private Path resolveJavac(Path root, boolean windows) throws IOException {
