@@ -45,10 +45,18 @@ public class Jdk8ManagerFromResource {
         String os = System.getProperty("os.name", "linux").toLowerCase(Locale.ENGLISH);
         LOG.info("Resolving bundled JDK8 for operating system {}", os);
         if (os.contains("win")) {
-            return ensureFromUrl(windowsArchiveUrl, true, "Windows");
+            if (windowsArchiveUrl != null && !windowsArchiveUrl.isBlank()) {
+                return ensureFromUrl(windowsArchiveUrl, true, "Windows");
+            }
+            LOG.warn("No Windows JDK8 archive configured, falling back to bundled Linux resource");
+            return ensureFromResource(linuxArchiveResource);
         }
         if (os.contains("mac") || os.contains("darwin")) {
-            return ensureFromUrl(macArchiveUrl, false, "macOS");
+            if (macArchiveUrl != null && !macArchiveUrl.isBlank()) {
+                return ensureFromUrl(macArchiveUrl, false, "macOS");
+            }
+            LOG.warn("No macOS JDK8 archive configured, falling back to bundled Linux resource");
+            return ensureFromResource(linuxArchiveResource);
         }
         return ensureFromResource(linuxArchiveResource);
     }

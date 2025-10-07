@@ -34,16 +34,19 @@ jobs:
             artifact-name: cn1-mcp-stdio-linux
             binary-path: target/native/nativeCompile/cn1-mcp-stdio
             artifact-file-name: cn1-mcp-stdio-linux
+            binary-glob: cn1-mcp-stdio*
           - os: macos-latest
             mvnw: ./mvnw
             artifact-name: cn1-mcp-stdio-macos
             binary-path: target/native/nativeCompile/cn1-mcp-stdio
             artifact-file-name: cn1-mcp-stdio-macos
+            binary-glob: cn1-mcp-stdio*
           - os: windows-latest
             mvnw: ./mvnw.cmd
             artifact-name: cn1-mcp-stdio-windows
             binary-path: target/native/nativeCompile/cn1-mcp-stdio.exe
             artifact-file-name: cn1-mcp-stdio-windows.exe
+            binary-glob: cn1-mcp-stdio*.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -71,8 +74,21 @@ jobs:
 
       - name: Prepare artifact
         run: |
+          set -euo pipefail
           mkdir -p native-dist
-          cp "${{ matrix.binary-path }}" "native-dist/${{ matrix.artifact-file-name }}"
+          binary="${{ matrix.binary-path }}"
+          if [ ! -f "$binary" ]; then
+            echo "Expected native binary not found at $binary"
+            echo "Listing contents of target/native for debugging:"
+            find target/native -maxdepth 3 -type f -print || true
+            binary=$(find target/native -maxdepth 3 -type f -name "${{ matrix.binary-glob }}" | head -n 1)
+            if [ -z "$binary" ]; then
+              echo "Unable to locate native binary"
+              exit 1
+            fi
+            echo "Using detected binary at $binary"
+          fi
+          cp "$binary" "native-dist/${{ matrix.artifact-file-name }}"
           chmod +x "native-dist/${{ matrix.artifact-file-name }}"
         shell: bash
 

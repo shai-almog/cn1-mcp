@@ -4,9 +4,12 @@ import com.codename1.server.mcp.dto.CompileRequest;
 import com.codename1.server.mcp.dto.FileEntry;
 import com.codename1.server.mcp.tools.GlobalExtractor;
 import com.codename1.server.mcp.tools.Jdk8ManagerFromResource;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 import java.io.InputStream;
 import java.nio.file.*;
@@ -15,14 +18,18 @@ import java.util.List;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.*;
 
+@EnabledOnOs({OS.LINUX, OS.MAC})
 public class CompileIntegrationTest {
     @TempDir Path tmp;
     Path cacheDir;
     GlobalExtractor extractor;
     Jdk8ManagerFromResource jdkMgr;
+    String originalOsName;
 
     @BeforeEach
     void setup() {
+        originalOsName = System.getProperty("os.name");
+        System.setProperty("os.name", "Linux");
         cacheDir = tmp.resolve(".cn1-mcp");           // isolated global cache per test run
         extractor = new GlobalExtractor(cacheDir.toString(), "it-v1"); // use production extractor
         assumeTrue(resourceExists("/cn1libs/CodenameOne.jar"),
@@ -32,6 +39,15 @@ public class CompileIntegrationTest {
                 "",
                 "",
                 "release");
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (originalOsName == null) {
+            System.clearProperty("os.name");
+        } else {
+            System.setProperty("os.name", originalOsName);
+        }
     }
 
     @Test
