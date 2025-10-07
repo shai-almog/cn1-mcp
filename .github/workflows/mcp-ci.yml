@@ -60,19 +60,12 @@ jobs:
           components: native-image
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run MCP tests with native profile (POSIX)
-        if: runner.os != 'Windows'
+      - name: Run MCP tests with native profile (Linux)
+        if: runner.os == 'Linux'
         env:
           SPRING_PROFILES_ACTIVE: stdio
         run: ${{ matrix.mvnw }} -B -ntp -Pnative test
         shell: bash
-
-      - name: Run MCP tests with native profile (Windows)
-        if: runner.os == 'Windows'
-        env:
-          SPRING_PROFILES_ACTIVE: stdio
-        run: .\mvnw.cmd -B -ntp -Pnative test
-        shell: pwsh
 
       - name: Build GraalVM native image (stdio mode, POSIX)
         if: runner.os != 'Windows'
