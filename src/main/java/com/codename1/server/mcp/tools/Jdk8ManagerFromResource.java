@@ -1,5 +1,8 @@
 package com.codename1.server.mcp.tools;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -11,25 +14,19 @@ import java.util.Locale;
 
 @Component
 public class Jdk8ManagerFromResource {
+    private static final Logger LOG = LoggerFactory.getLogger(Jdk8ManagerFromResource.class);
     private final GlobalExtractor extractor;
     private final String linuxArchiveResource;
     private final String macArchiveUrl;
     private final String windowsArchiveUrl;
     private final String rootMarker; // e.g. "release"
 
+    @Autowired
     public Jdk8ManagerFromResource(GlobalExtractor extractor,
                                    @Value("${cn1.jdk8.linuxResourcePath:${cn1.jdk8.resourcePath}}") String linuxArchiveResource,
                                    @Value("${cn1.jdk8.macUrl:}") String macArchiveUrl,
                                    @Value("${cn1.jdk8.windowsUrl:}") String windowsArchiveUrl,
                                    @Value("${cn1.jdk8.rootMarker}") String rootMarker) {
-        this(extractor, linuxArchiveResource, macArchiveUrl, windowsArchiveUrl, rootMarker);
-    }
-
-    public Jdk8ManagerFromResource(GlobalExtractor extractor,
-                                   String linuxArchiveResource,
-                                   String macArchiveUrl,
-                                   String windowsArchiveUrl,
-                                   String rootMarker) {
         this.extractor = extractor;
         this.linuxArchiveResource = linuxArchiveResource;
         this.macArchiveUrl = macArchiveUrl;
@@ -37,9 +34,16 @@ public class Jdk8ManagerFromResource {
         this.rootMarker = rootMarker;
     }
 
+    public Jdk8ManagerFromResource(GlobalExtractor extractor,
+                                   String linuxArchiveResource,
+                                   String rootMarker) {
+        this(extractor, linuxArchiveResource, "", "", rootMarker);
+    }
+
     /** Ensures the bundled JDK 8 archive is extracted, returns path to .../bin/javac */
     public Path ensureJavac8() throws IOException {
         String os = System.getProperty("os.name", "linux").toLowerCase(Locale.ENGLISH);
+        LOG.info("Resolving bundled JDK8 for operating system {}", os);
         if (os.contains("win")) {
             return ensureFromUrl(windowsArchiveUrl, true, "Windows");
         }
@@ -56,6 +60,7 @@ public class Jdk8ManagerFromResource {
         String fileName = Path.of(resource).getFileName().toString();
         String folderName = stripArchiveExtension(fileName);
         GlobalExtractor.ArchiveType type = GlobalExtractor.ArchiveType.fromName(fileName);
+        LOG.info("Ensuring Linux JDK8 resource {} -> folder {}", resource, folderName);
         Path jdkRoot = extractor.ensureArchiveExtracted(resource, folderName);
         Path root = findJdkRoot(jdkRoot);
         return resolveJavac(root, type == GlobalExtractor.ArchiveType.ZIP);
@@ -67,6 +72,7 @@ public class Jdk8ManagerFromResource {
         }
         String fileName = fileName(url);
         String folderName = stripArchiveExtension(fileName);
+        LOG.info("Ensuring remote JDK8 {} for {} -> folder {}", url, label, folderName);
         Path jdkRoot = extractor.ensureArchiveExtractedFromUrl(url, folderName);
         Path root = findJdkRoot(jdkRoot);
         return resolveJavac(root, windows);
@@ -87,6 +93,7 @@ public class Jdk8ManagerFromResource {
         Path javac = root.resolve(windows ? "bin/javac.exe" : "bin/javac");
         if (!Files.exists(javac)) throw new IOException("javac not found at " + javac);
         if (!windows && !Files.isExecutable(javac)) throw new IOException("javac not executable at " + javac);
+        LOG.debug("Resolved javac executable at {}", javac);
         return javac;
     }
 

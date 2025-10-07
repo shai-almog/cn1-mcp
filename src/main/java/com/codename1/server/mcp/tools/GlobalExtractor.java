@@ -3,8 +3,11 @@ package com.codename1.server.mcp.tools;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -19,7 +22,10 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class GlobalExtractor {
+    private static final Logger LOG = LoggerFactory.getLogger(GlobalExtractor.class);
     private static final ConcurrentHashMap<String, ReentrantLock> LOCAL_LOCKS = new ConcurrentHashMap<>();
+    private static final Method ZIP_GET_UNIX_MODE = resolveMethod("getUnixMode");
+    private static final Method ZIP_GET_EXTERNAL_ATTRIBUTES = resolveMethod("getExternalAttributes");
 
     private final Path cacheDir;
     private final String versionTag;
@@ -45,7 +51,10 @@ public class GlobalExtractor {
         Files.createDirectories(base);
 
         Path out = base.resolve(Path.of(resourcePath).getFileName().toString());
-        if (Files.exists(out)) return out;
+        if (Files.exists(out)) {
+            LOG.debug("Resource {} already extracted at {}", resourcePath, out);
+            return out;
+        }
 
         Path lockPath = base.resolve(".extract.lock");
         ReentrantLock local = LOCAL_LOCKS.computeIfAbsent(lockPath.toString(), k -> new ReentrantLock());
@@ -54,6 +63,7 @@ public class GlobalExtractor {
         try (FileChannel ch = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
              FileLock ignored = ch.lock()) { // OS-level lock for cross-process safety
             if (!Files.exists(out)) {
+                LOG.info("Extracting resource {} to {}", resourcePath, out);
                 Path tmp = Files.createTempFile(base, ".res", ".tmp");
                 Files.write(tmp, bytes, StandardOpenOption.TRUNCATE_EXISTING);
                 Files.move(tmp, out, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -81,17 +91,20 @@ public class GlobalExtractor {
 
         Path parent = cacheDir.resolve("jdks").resolve(versionTag + "-" + hash);
         Path destRoot = parent.resolve(folderName);
-        if (Files.exists(destRoot)) return destRoot;
+        if (Files.exists(destRoot)) {
+            LOG.debug("Archive {} already extracted at {}", identifier, destRoot);
+            return destRoot;
+        }
 
         Path lockPath = parent.resolve(".extract.lock");
         ReentrantLock local = LOCAL_LOCKS.computeIfAbsent(lockPath.toString(), k -> new ReentrantLock());
 
         local.lock();
-        try (FileChannel ch = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-             FileLock ignored = ch.lock()) {
-            if (Files.exists(destRoot)) return destRoot;
-
+        try {
             Files.createDirectories(parent);
+            try (FileChannel ch = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                 FileLock ignored = ch.lock()) {
+                if (Files.exists(destRoot)) return destRoot;
 
             Path archivePath = parent.resolve("archive" + type.extension);
             if (!Files.exists(archivePath)) {
@@ -102,6 +115,7 @@ public class GlobalExtractor {
                     in.transferTo(out);
                 }
                 Files.move(tmpArchive, archivePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                LOG.info("Fetched archive {} into {}", identifier, archivePath);
             }
 
             Path tmpRoot = Files.createTempDirectory(parent, "tmp-extract-");
@@ -109,11 +123,13 @@ public class GlobalExtractor {
             try {
                 extractArchive(archivePath, type, tmpRoot);
                 Files.move(tmpRoot, destRoot, StandardCopyOption.ATOMIC_MOVE);
+                LOG.info("Extracted archive {} to {}", identifier, destRoot);
                 success = true;
             } finally {
                 if (!success) {
                     cleanupDirectory(tmpRoot);
                 }
+            }
             }
         } finally {
             local.unlock();
@@ -170,9 +186,31 @@ public class GlobalExtractor {
         }
     }
 
+    private static Method resolveMethod(String name) {
+        try {
+            return ZipEntry.class.getMethod(name);
+        } catch (NoSuchMethodException e) {
+            LOG.debug("ZipEntry method {} not available on this JDK", name);
+            return null;
+        }
+    }
+
     private static boolean isExecutable(ZipEntry entry) {
-        // upper 16 bits of external attributes hold UNIX permissions when present
-        return ((entry.getExternalAttributes() >> 16) & 0100) != 0;
+        try {
+            if (ZIP_GET_UNIX_MODE != null) {
+                int unixMode = (int) ZIP_GET_UNIX_MODE.invoke(entry);
+                if (unixMode != -1) {
+                    return (unixMode & 0100) != 0;
+                }
+            }
+            if (ZIP_GET_EXTERNAL_ATTRIBUTES != null) {
+                long attrs = (long) ZIP_GET_EXTERNAL_ATTRIBUTES.invoke(entry);
+                return ((attrs >> 16) & 0100) != 0;
+            }
+        } catch (ReflectiveOperationException e) {
+            LOG.debug("Failed to inspect permissions for zip entry {}", entry.getName(), e);
+        }
+        return false;
     }
 
     private void cleanupDirectory(Path dir) {

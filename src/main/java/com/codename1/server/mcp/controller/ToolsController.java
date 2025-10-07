@@ -17,12 +17,15 @@ import com.codename1.server.mcp.service.ExternalCompileService;
 import com.codename1.server.mcp.service.LintService;
 import com.codename1.server.mcp.service.ScaffoldService;
 import com.codename1.server.mcp.service.SnippetService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/tools")
 public class ToolsController {
+    private static final Logger LOG = LoggerFactory.getLogger(ToolsController.class);
     private final LintService lint;
     private final ExternalCompileService compile;
     private final ScaffoldService scaffold;
@@ -36,25 +39,41 @@ public class ToolsController {
     }
 
     @PostMapping(value="/cn1_lint_code", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public LintResponse lint(@RequestBody LintRequest req) { return lint.lint(req); }
+    public LintResponse lint(@RequestBody LintRequest req) {
+        LOG.info("HTTP lint request received: language={} rulesetSize={}", req.language(), req.ruleset() == null ? 0 : req.ruleset().size());
+        return lint.lint(req);
+    }
 
     @PostMapping(value="/cn1_compile_check", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public CompileResponse compile(@RequestBody CompileRequest req) { return compile.compile(req); }
+    public CompileResponse compile(@RequestBody CompileRequest req) {
+        LOG.info("HTTP compile request received with {} files", req.files().size());
+        return compile.compile(req);
+    }
 
     @PostMapping(value="/cn1_scaffold_project", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public ScaffoldResponse scaffold(@RequestBody ScaffoldRequest req) { return scaffold.scaffold(req); }
+    public ScaffoldResponse scaffold(@RequestBody ScaffoldRequest req) {
+        LOG.info("HTTP scaffold request received: package={} name={}", req.pkg(), req.name());
+        return scaffold.scaffold(req);
+    }
 
     @PostMapping(value="/cn1_explain_violation", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public ExplainResponse explain(@RequestBody ExplainRequest req) { return snippets.explain(req.ruleId()); }
+    public ExplainResponse explain(@RequestBody ExplainRequest req) {
+        LOG.info("HTTP explain request received for rule {}", req.ruleId());
+        return snippets.explain(req.ruleId());
+    }
 
     @PostMapping(value="/cn1_search_snippets", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public SnippetsResponse snippets(@RequestBody SnippetsRequest req) { return snippets.get(req.topic()); }
+    public SnippetsResponse snippets(@RequestBody SnippetsRequest req) {
+        LOG.info("HTTP snippets search for topic {}", req.topic());
+        return snippets.get(req.topic());
+    }
 
     // Auto-fix can be naive: rewrap UI mutations; expand as needed
     @PostMapping(value="/cn1_auto_fix", consumes=MediaType.APPLICATION_JSON_VALUE)
     public AutoFixResponse autoFix(@RequestBody AutoFixRequest req) {
         String patched = req.code().replace("form.show();",
                 "com.codename1.ui.Display.getInstance().callSerially(() -> { form.show(); });");
+        LOG.info("HTTP auto-fix request received ({} chars)", req.code() != null ? req.code().length() : 0);
         var patch = new Patch("Wrap show() in EDT", """
       @@
       - form.show();
