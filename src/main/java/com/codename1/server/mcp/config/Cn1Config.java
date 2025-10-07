@@ -17,6 +17,6 @@ public class Cn1Config {
 
     @ConfigurationProperties(prefix = "cn1")
     public record Cn1Props(String cacheDir, String libsVersionTag, Jdk8Props jdk8) {
-        public record Jdk8Props(String resourcePath, String rootMarker) {}
+        public record Jdk8Props(String linuxResourcePath, String macUrl, String windowsUrl, String rootMarker) {}
     }
 }

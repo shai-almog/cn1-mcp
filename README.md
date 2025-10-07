@@ -1,5 +1,5 @@
 ## CN1 MCP
-Basic MCP optimized for Linux at this time.
+MCP server that now bundles Linux JDK 8 resources and can automatically download matching Temurin builds for macOS and Windows.
 
 It can run in two modes:
 

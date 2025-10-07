@@ -4,38 +4,72 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.file.*;
+import java.util.Locale;
 
 @Component
 public class Jdk8ManagerFromResource {
     private final GlobalExtractor extractor;
-    private final String jdkArchiveResource;
+    private final String linuxArchiveResource;
+    private final String macArchiveUrl;
+    private final String windowsArchiveUrl;
     private final String rootMarker; // e.g. "release"
 
     public Jdk8ManagerFromResource(GlobalExtractor extractor,
-                                   @Value("${cn1.jdk8.resourcePath}") String jdkArchiveResource,
+                                   @Value("${cn1.jdk8.linuxResourcePath:${cn1.jdk8.resourcePath}}") String linuxArchiveResource,
+                                   @Value("${cn1.jdk8.macUrl:}") String macArchiveUrl,
+                                   @Value("${cn1.jdk8.windowsUrl:}") String windowsArchiveUrl,
                                    @Value("${cn1.jdk8.rootMarker}") String rootMarker) {
+        this(extractor, linuxArchiveResource, macArchiveUrl, windowsArchiveUrl, rootMarker);
+    }
+
+    public Jdk8ManagerFromResource(GlobalExtractor extractor,
+                                   String linuxArchiveResource,
+                                   String macArchiveUrl,
+                                   String windowsArchiveUrl,
+                                   String rootMarker) {
         this.extractor = extractor;
-        this.jdkArchiveResource = jdkArchiveResource;
+        this.linuxArchiveResource = linuxArchiveResource;
+        this.macArchiveUrl = macArchiveUrl;
+        this.windowsArchiveUrl = windowsArchiveUrl;
         this.rootMarker = rootMarker;
     }
 
     /** Ensures the bundled JDK 8 archive is extracted, returns path to .../bin/javac */
     public Path ensureJavac8() throws IOException {
-        if (!System.getProperty("os.name").toLowerCase().contains("linux")) {
-            // this is a local environment test
-            return Path.of("/Users/shai/Library/Java/JavaVirtualMachines/azul-1.8.0_372/Contents/Home/bin/javac");
+        String os = System.getProperty("os.name", "linux").toLowerCase(Locale.ENGLISH);
+        if (os.contains("win")) {
+            return ensureFromUrl(windowsArchiveUrl, true, "Windows");
         }
-        // The folder name is derived from the archive file name (without extension)
-        String fileName = Path.of(jdkArchiveResource).getFileName().toString();          // temurin8-linux-x64.tar.gz
-        String folderName = fileName.replace(".tar.gz", "");
-        Path jdkRoot = extractor.ensureArchiveExtracted(jdkArchiveResource, folderName);
+        if (os.contains("mac") || os.contains("darwin")) {
+            return ensureFromUrl(macArchiveUrl, false, "macOS");
+        }
+        return ensureFromResource(linuxArchiveResource);
+    }
 
-        // Some archives contain a top-level directory (e.g., jdk8uXXX-.../)
+    private Path ensureFromResource(String resource) throws IOException {
+        if (resource == null || resource.isBlank()) {
+            throw new IOException("No bundled JDK8 resource configured for Linux");
+        }
+        String fileName = Path.of(resource).getFileName().toString();
+        String folderName = stripArchiveExtension(fileName);
+        GlobalExtractor.ArchiveType type = GlobalExtractor.ArchiveType.fromName(fileName);
+        Path jdkRoot = extractor.ensureArchiveExtracted(resource, folderName);
         Path root = findJdkRoot(jdkRoot);
-        Path javac = root.resolve("bin/javac");
-        if (!Files.isExecutable(javac)) throw new IOException("javac not found at " + javac);
-        return javac;
+        return resolveJavac(root, type == GlobalExtractor.ArchiveType.ZIP);
+    }
+
+    private Path ensureFromUrl(String url, boolean windows, String label) throws IOException {
+        if (url == null || url.isBlank()) {
+            throw new IOException("No JDK8 download URL configured for " + label);
+        }
+        String fileName = fileName(url);
+        String folderName = stripArchiveExtension(fileName);
+        Path jdkRoot = extractor.ensureArchiveExtractedFromUrl(url, folderName);
+        Path root = findJdkRoot(jdkRoot);
+        return resolveJavac(root, windows);
     }
 
     private Path findJdkRoot(Path base) throws IOException {
@@ -47,5 +81,29 @@ public class Jdk8ManagerFromResource {
             }
         }
         return base; // fallback
+    }
+
+    private Path resolveJavac(Path root, boolean windows) throws IOException {
+        Path javac = root.resolve(windows ? "bin/javac.exe" : "bin/javac");
+        if (!Files.exists(javac)) throw new IOException("javac not found at " + javac);
+        if (!windows && !Files.isExecutable(javac)) throw new IOException("javac not executable at " + javac);
+        return javac;
+    }
+
+    private static String stripArchiveExtension(String name) {
+        if (name.toLowerCase(Locale.ENGLISH).endsWith(".tar.gz")) {
+            return name.substring(0, name.length() - ".tar.gz".length());
+        }
+        if (name.toLowerCase(Locale.ENGLISH).endsWith(".tgz")) {
+            return name.substring(0, name.length() - ".tgz".length());
+        }
+        if (name.toLowerCase(Locale.ENGLISH).endsWith(".zip")) {
+            return name.substring(0, name.length() - ".zip".length());
+        }
+        return name;
+    }
+
+    private static String fileName(String url) throws MalformedURLException {
+        return Path.of(new URL(url).getPath()).getFileName().toString();
     }
 }
