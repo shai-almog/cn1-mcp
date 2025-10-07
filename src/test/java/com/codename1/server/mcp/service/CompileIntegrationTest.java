@@ -28,7 +28,10 @@ public class CompileIntegrationTest {
         assumeTrue(resourceExists("/cn1libs/CodenameOne.jar"),
                 "Missing bundled CodenameOne.jar under /cn1libs/");
         jdkMgr = new Jdk8ManagerFromResource(extractor,
-                "/cn1libs/OpenJDK8U-jdk_x64_linux_hotspot_8u462b08.tar.gz", "release");
+                "/cn1libs/OpenJDK8U-jdk_x64_linux_hotspot_8u462b08.tar.gz",
+                "",
+                "",
+                "release");
     }
 
     @Test
