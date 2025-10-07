@@ -11,6 +11,7 @@ import org.mockito.Mockito;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -39,15 +40,35 @@ class ExternalCompileServiceTest {
     }
 
     private static Path makeJavacShim(Path dir, Path argsOut) throws Exception {
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ENGLISH).contains("win");
+        if (windows) {
+            Path cmd = dir.resolve("javac.cmd");
+            String script = """
+                    @echo off
+                    setlocal
+                    <nul set /p="ARGS:" > "%1$s"
+                :loop
+                    if "%%~1"=="" goto done
+                    <nul set /p=" [%%~1]" >> "%1$s"
+                    shift
+                    goto loop
+                :done
+                    echo.>>"%1$s"
+                    exit /b 0
+                    """.formatted(argsOut);
+            Files.writeString(cmd, script, StandardCharsets.UTF_8);
+            return cmd;
+        }
+
         Path sh = dir.resolve("javac");
         String script = """
-      #!/bin/sh
-      printf "ARGS:" > "%s"
-      for a in "$@"; do printf " [%s]" "$a" >> "%s"; done
-      printf "\\n" >> "%s"
-      exit 0
-      """.formatted(argsOut, "%s", argsOut, argsOut);
-        Files.writeString(sh, script);
+                #!/bin/sh
+                printf "ARGS:" > "%1$s"
+                for a in "$@"; do printf " [%%s]" "$a" >> "%1$s"; done
+                printf "\\n" >> "%1$s"
+                exit 0
+                """.formatted(argsOut);
+        Files.writeString(sh, script, StandardCharsets.UTF_8);
         sh.toFile().setExecutable(true);
         return sh;
     }

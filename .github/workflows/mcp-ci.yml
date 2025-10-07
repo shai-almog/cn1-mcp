@@ -2,9 +2,8 @@ name: MCP CI
 
 on:
   push:
+    branches: ["main", "master"]
   pull_request:
-  merge_group:
-  workflow_dispatch:
 
 jobs:
   build:

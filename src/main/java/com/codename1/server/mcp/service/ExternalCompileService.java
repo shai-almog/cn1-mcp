@@ -49,13 +49,12 @@ public class ExternalCompileService {
                     javac.toString(),
                     "-source", "8", "-target", "8",
                     "-Xlint:all",
-                    "-extdirs", "",
-                    "-bootclasspath", boot.toString(),
-                    "-classpath", cn1.toString()
+                    "-extdirs", ""
             ));
             if (Files.exists(boot)) {
                 cmd.addAll(List.of("-bootclasspath", boot.toString()));
             }
+            cmd.addAll(List.of("-classpath", cn1.toString()));
             sources.forEach(s -> cmd.add(s.toString()));
             LOG.debug("Compile command: {}", cmd);
 
