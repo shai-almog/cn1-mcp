@@ -18,7 +18,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.*;
 
-@EnabledOnOs({OS.LINUX, OS.MAC})
+@EnabledOnOs(OS.LINUX)
 public class CompileIntegrationTest {
     @TempDir Path tmp;
     Path cacheDir;

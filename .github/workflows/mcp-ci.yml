@@ -31,20 +31,23 @@ jobs:
         include:
           - os: ubuntu-latest
             mvnw: ./mvnw
+            shell: bash
             artifact-name: cn1-mcp-stdio-linux
-            binary-path: target/native/nativeCompile/cn1-mcp-stdio
+            binary-path: target/cn1-mcp-stdio
             artifact-file-name: cn1-mcp-stdio-linux
             binary-glob: cn1-mcp-stdio*
           - os: macos-latest
             mvnw: ./mvnw
+            shell: bash
             artifact-name: cn1-mcp-stdio-macos
-            binary-path: target/native/nativeCompile/cn1-mcp-stdio
+            binary-path: target/cn1-mcp-stdio
             artifact-file-name: cn1-mcp-stdio-macos
             binary-glob: cn1-mcp-stdio*
           - os: windows-latest
             mvnw: ./mvnw.cmd
+            shell: pwsh
             artifact-name: cn1-mcp-stdio-windows
-            binary-path: target/native/nativeCompile/cn1-mcp-stdio.exe
+            binary-path: target/cn1-mcp-stdio.exe
             artifact-file-name: cn1-mcp-stdio-windows.exe
             binary-glob: cn1-mcp-stdio*.exe
     runs-on: ${{ matrix.os }}
@@ -64,24 +67,25 @@ jobs:
         env:
           SPRING_PROFILES_ACTIVE: stdio
         run: ${{ matrix.mvnw }} -B -ntp -Pnative test
-        shell: bash
+        shell: ${{ matrix.shell }}
 
       - name: Build GraalVM native image (stdio mode)
         env:
           SPRING_PROFILES_ACTIVE: stdio
         run: ${{ matrix.mvnw }} -B -ntp -Pnative -DskipTests native:compile
-        shell: bash
+        shell: ${{ matrix.shell }}
 
-      - name: Prepare artifact
+      - name: Prepare artifact (POSIX)
+        if: runner.os != 'Windows'
         run: |
           set -euo pipefail
           mkdir -p native-dist
           binary="${{ matrix.binary-path }}"
           if [ ! -f "$binary" ]; then
             echo "Expected native binary not found at $binary"
-            echo "Listing contents of target/native for debugging:"
-            find target/native -maxdepth 3 -type f -print || true
-            binary=$(find target/native -maxdepth 3 -type f -name "${{ matrix.binary-glob }}" | head -n 1)
+            echo "Listing contents of target for debugging:"
+            find target -maxdepth 3 -type f -print || true
+            binary=$(find target -maxdepth 3 -type f -name "${{ matrix.binary-glob }}" | head -n 1)
             if [ -z "$binary" ]; then
               echo "Unable to locate native binary"
               exit 1
@@ -91,6 +95,25 @@ jobs:
           cp "$binary" "native-dist/${{ matrix.artifact-file-name }}"
           chmod +x "native-dist/${{ matrix.artifact-file-name }}"
         shell: bash
+
+      - name: Prepare artifact (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Path native-dist -Force | Out-Null
+          $binary = "${{ matrix.binary-path }}"
+          if (-not (Test-Path $binary)) {
+            Write-Host "Expected native binary not found at $binary"
+            Write-Host "Listing contents of target for debugging:"
+            Get-ChildItem -Recurse -File target | ForEach-Object { $_.FullName }
+            $binary = Get-ChildItem -Recurse -File target -Filter "${{ matrix.binary-glob }}" | Select-Object -First 1
+            if (-not $binary) {
+              throw "Unable to locate native binary"
+            }
+            Write-Host "Using detected binary at $($binary.FullName)"
+          }
+          $binaryPath = if ($binary -is [System.IO.FileInfo]) { $binary.FullName } else { $binary }
+          Copy-Item $binaryPath "native-dist/${{ matrix.artifact-file-name }}" -Force
+        shell: pwsh
 
       - name: Upload native binary
         uses: actions/upload-artifact@v4
