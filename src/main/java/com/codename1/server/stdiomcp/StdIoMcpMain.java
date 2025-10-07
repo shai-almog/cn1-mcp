@@ -30,7 +30,6 @@ public class StdIoMcpMain {
     record RpcErr(String jsonrpc, Object id, Map<String,Object> error) {}
 
     public static void main(String[] args) throws Exception {
-        LOG.info("Starting Codename One MCP in STDIO mode");
         ConfigurableApplicationContext ctx =
                 new SpringApplicationBuilder(McpApplication.class)
                         .profiles("stdio")
