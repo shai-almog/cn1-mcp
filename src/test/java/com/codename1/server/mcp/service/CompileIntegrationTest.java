@@ -8,6 +8,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
@@ -19,6 +20,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnabledOnOs(OS.LINUX)
+@DisabledOnOs(OS.WINDOWS)
 public class CompileIntegrationTest {
     @TempDir Path tmp;
     Path cacheDir;
