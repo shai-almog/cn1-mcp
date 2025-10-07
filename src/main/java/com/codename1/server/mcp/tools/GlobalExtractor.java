@@ -214,6 +214,9 @@ public class GlobalExtractor {
         T get() throws IOException;
     }
 
+    private static String sha256(String s) {
+        return sha256(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
     private static String sha256(byte[] d) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
