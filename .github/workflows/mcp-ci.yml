@@ -22,3 +22,62 @@ jobs:
         env:
           SPRING_PROFILES_ACTIVE: stdio
         run: ./mvnw -B -ntp verify
+
+  native-images:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            mvnw: ./mvnw
+            artifact-name: cn1-mcp-stdio-linux
+            binary-path: target/native/nativeCompile/cn1-mcp-stdio
+            artifact-file-name: cn1-mcp-stdio-linux
+          - os: macos-latest
+            mvnw: ./mvnw
+            artifact-name: cn1-mcp-stdio-macos
+            binary-path: target/native/nativeCompile/cn1-mcp-stdio
+            artifact-file-name: cn1-mcp-stdio-macos
+          - os: windows-latest
+            mvnw: ./mvnw.cmd
+            artifact-name: cn1-mcp-stdio-windows
+            binary-path: target/native/nativeCompile/cn1-mcp-stdio.exe
+            artifact-file-name: cn1-mcp-stdio-windows.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          distribution: graalvm-community
+          java-version: '21'
+          components: native-image
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run MCP tests with native profile
+        env:
+          SPRING_PROFILES_ACTIVE: stdio
+        run: ${{ matrix.mvnw }} -B -ntp -Pnative test
+        shell: bash
+
+      - name: Build GraalVM native image (stdio mode)
+        env:
+          SPRING_PROFILES_ACTIVE: stdio
+        run: ${{ matrix.mvnw }} -B -ntp -Pnative -DskipTests native:compile
+        shell: bash
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p native-dist
+          cp "${{ matrix.binary-path }}" "native-dist/${{ matrix.artifact-file-name }}"
+          chmod +x "native-dist/${{ matrix.artifact-file-name }}"
+        shell: bash
+
+      - name: Upload native binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: native-dist/${{ matrix.artifact-file-name }}
