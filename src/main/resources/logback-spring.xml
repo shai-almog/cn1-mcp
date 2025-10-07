@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="cacheDir" source="cn1.cacheDir" defaultValue="${USER_HOME}/.cn1-mcp"/>
+    <property name="LOG_DIR" value="${cacheDir}/logs"/>
+    <property name="STDIO_LOG_FILE" value="${LOG_DIR}/mcp-stdio.log"/>
+
+    <springProfile name="stdio">
+        <appender name="STDIO_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${STDIO_LOG_FILE}</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_DIR}/mcp-stdio.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <maxFileSize>10MB</maxFileSize>
+                <maxHistory>7</maxHistory>
+                <totalSizeCap>200MB</totalSizeCap>
+            </rollingPolicy>
+            <encoder>
+                <pattern>${FILE_LOG_PATTERN}</pattern>
+            </encoder>
+        </appender>
+
+        <logger name="com.codename1.server" level="DEBUG" additivity="false">
+            <appender-ref ref="STDIO_FILE"/>
+        </logger>
+
+        <root level="INFO">
+            <appender-ref ref="STDIO_FILE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!stdio">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+        <logger name="com.codename1.server" level="DEBUG"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+</configuration>

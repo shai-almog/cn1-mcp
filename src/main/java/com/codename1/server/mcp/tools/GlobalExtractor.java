@@ -3,6 +3,8 @@ package com.codename1.server.mcp.tools;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.channels.FileChannel;
@@ -15,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class GlobalExtractor {
+    private static final Logger LOG = LoggerFactory.getLogger(GlobalExtractor.class);
     private static final ConcurrentHashMap<String, ReentrantLock> LOCAL_LOCKS = new ConcurrentHashMap<>();
 
     private final Path cacheDir;
@@ -23,6 +26,7 @@ public class GlobalExtractor {
     public GlobalExtractor(String cacheDir, String versionTag) {
         this.cacheDir = Paths.get(Objects.requireNonNull(cacheDir));
         this.versionTag = Objects.requireNonNull(versionTag);
+        LOG.debug("GlobalExtractor initialized with cacheDir={} versionTag={}", this.cacheDir, this.versionTag);
     }
 
     /** Make overridable for tests. */
@@ -34,6 +38,7 @@ public class GlobalExtractor {
     }
 
     public Path ensureFile(String resourcePath) throws IOException {
+        LOG.debug("Ensuring file for resource {}", resourcePath);
         byte[] bytes = readResource(resourcePath);
         String hash = sha256(bytes).substring(0, 12);
 
@@ -41,7 +46,10 @@ public class GlobalExtractor {
         Files.createDirectories(base);
 
         Path out = base.resolve(Path.of(resourcePath).getFileName().toString());
-        if (Files.exists(out)) return out;
+        if (Files.exists(out)) {
+            LOG.trace("Resource {} already extracted at {}", resourcePath, out);
+            return out;
+        }
 
         Path lockPath = base.resolve(".extract.lock");
         ReentrantLock local = LOCAL_LOCKS.computeIfAbsent(lockPath.toString(), k -> new ReentrantLock());
@@ -50,6 +58,7 @@ public class GlobalExtractor {
         try (FileChannel ch = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
              FileLock ignored = ch.lock()) { // OS-level lock for cross-process safety
             if (!Files.exists(out)) {
+                LOG.info("Extracting resource {} to {}", resourcePath, out);
                 Path tmp = Files.createTempFile(base, ".res", ".tmp");
                 Files.write(tmp, bytes, StandardOpenOption.TRUNCATE_EXISTING);
                 Files.move(tmp, out, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -61,12 +70,16 @@ public class GlobalExtractor {
     }
 
     public Path ensureArchiveExtracted(String archiveResourcePath, String folderName) throws IOException {
+        LOG.debug("Ensuring archive {} extracted into folder {}", archiveResourcePath, folderName);
         byte[] bytes = readResource(archiveResourcePath);
         String hash = sha256(bytes).substring(0, 12);
 
         Path parent = cacheDir.resolve("jdks").resolve(versionTag + "-" + hash);
         Path destRoot = parent.resolve(folderName);
-        if (Files.exists(destRoot)) return destRoot;
+        if (Files.exists(destRoot)) {
+            LOG.trace("Archive {} already extracted at {}", archiveResourcePath, destRoot);
+            return destRoot;
+        }
 
         Path lockPath = parent.resolve(".extract.lock");
         ReentrantLock local = LOCAL_LOCKS.computeIfAbsent(lockPath.toString(), k -> new ReentrantLock());
@@ -81,6 +94,7 @@ public class GlobalExtractor {
                  GzipCompressorInputStream gzi = new GzipCompressorInputStream(in);
                  TarArchiveInputStream tar = new TarArchiveInputStream(gzi)) {
 
+                LOG.info("Extracting archive {} into {}", archiveResourcePath, tmpRoot);
                 TarArchiveEntry e;
                 while ((e = tar.getNextTarEntry()) != null) {
                     Path out = tmpRoot.resolve(e.getName()).normalize();
@@ -101,6 +115,7 @@ public class GlobalExtractor {
         } finally {
             local.unlock();
         }
+        LOG.debug("Archive {} extracted to {}", archiveResourcePath, destRoot);
         return destRoot;
     }
 

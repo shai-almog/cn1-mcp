@@ -9,19 +9,27 @@ import com.codename1.server.mcp.rules.RulePack;
 import com.codename1.server.mcp.tools.PatchUtil;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
 
 @Service
 public class LintService {
+    private static final Logger LOG = LoggerFactory.getLogger(LintService.class);
+
     public LintResponse lint(LintRequest req) {
+        LOG.info("Linting request: language={}, codeLength={}, ruleset={} entries",
+                req.language(), req.code() != null ? req.code().length() : 0,
+                req.ruleset() != null ? req.ruleset().size() : 0);
         var code = req.code();
         var diags = new ArrayList<LintDiag>();
         var fixes = new ArrayList<QuickFix>();
 
         // 1) Forbidden imports
         var lines = code.split("\\R");
+        LOG.debug("Checking for forbidden imports across {} lines", lines.length);
         for (int i = 0; i < lines.length; i++) {
             String ln = lines[i];
             for (Pattern p : RulePack.FORBIDDEN) {
@@ -33,6 +41,7 @@ public class LintService {
         }
 
         // 2) Forbidden FQNs
+        LOG.debug("Checking for forbidden fully-qualified names");
         for (Pattern p : RulePack.FORBIDDEN_FQNS) {
             var m = p.matcher(code);
             if (m.find()) {
@@ -50,6 +59,7 @@ public class LintService {
         }
 
         // 4) EDT rule heuristic
+        LOG.debug("Checking EDT rule heuristics");
         boolean hasUiMutation = RulePack.UI_MUTATION.matcher(code).find();
         boolean wrapped = RulePack.CALLS_SERIAL.matcher(code).find();
         if (hasUiMutation && !wrapped) {
@@ -72,6 +82,7 @@ public class LintService {
 
         // 6) Optional AST pass for imports that escaped regex
         try {
+            LOG.debug("Running AST import inspection");
             CompilationUnit cu = StaticJavaParser.parse(code);
             cu.getImports().forEach(imp -> {
                 String q = imp.getNameAsString();
@@ -82,9 +93,14 @@ public class LintService {
                             "Forbidden import: " + q, new Range(new Range.Pos(1,1), new Range.Pos(1,1))));
                 }
             });
-        } catch (Exception ignored) { /* keep lint robust */ }
+        } catch (Exception ignored) {
+            LOG.debug("AST parsing failed but linting continues", ignored);
+        }
 
-        return new LintResponse(diags.isEmpty(), diags, fixes);
+        LintResponse response = new LintResponse(diags.isEmpty(), diags, fixes);
+        LOG.info("Linting complete: ok={}, diagnostics={}, quickFixes={}",
+                response.ok(), response.diagnostics().size(), response.quickFixes().size());
+        return response;
     }
 
     private Range rng(int i, String ln) {

@@ -3,12 +3,15 @@ package com.codename1.server.mcp.service;
 import com.codename1.server.mcp.dto.ExplainResponse;
 import com.codename1.server.mcp.dto.Snippet;
 import com.codename1.server.mcp.dto.SnippetsResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
 @Service
 public class SnippetService {
+    private static final Logger LOG = LoggerFactory.getLogger(SnippetService.class);
     private static final Map<String, List<Snippet>> DB = Map.of(
             "rest", List.of(new Snippet("REST GET",
                     "Use Rest with async onComplete; no blocking on EDT.",
@@ -34,10 +37,14 @@ public class SnippetService {
             );
 
     public SnippetsResponse get(String topic) {
-        return new SnippetsResponse(DB.getOrDefault(topic, List.of()));
+        LOG.info("Retrieving snippets for topic '{}'", topic);
+        var snippets = DB.getOrDefault(topic, List.of());
+        LOG.debug("Found {} snippet(s) for topic '{}'", snippets.size(), topic);
+        return new SnippetsResponse(snippets);
     }
 
     public ExplainResponse explain(String ruleId) {
+        LOG.info("Explaining rule '{}'", ruleId);
         return switch (ruleId) {
             case "CN1_EDT_RULE" -> new ExplainResponse(
                     "UI changes must run on the Event Dispatch Thread (EDT).",

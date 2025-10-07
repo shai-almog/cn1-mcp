@@ -3,12 +3,16 @@ package com.codename1.server.mcp.service;
 import com.codename1.server.mcp.dto.FileEntry;
 import com.codename1.server.mcp.dto.ScaffoldRequest;
 import com.codename1.server.mcp.dto.ScaffoldResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 
 @Service
 public class ScaffoldService {
+    private static final Logger LOG = LoggerFactory.getLogger(ScaffoldService.class);
     public ScaffoldResponse scaffold(ScaffoldRequest req) {
+        LOG.info("Generating scaffold for package '{}' and name '{}'", req.pkg(), req.name());
         String pkg = req.pkg();
         String name = req.name();
 
@@ -18,6 +22,7 @@ public class ScaffoldService {
         files.add(new FileEntry("src/main/codenameone/native/android/build.gradle", "// placeholder"));
         files.add(new FileEntry("src/main/codenameone/theme.css", themeCss()));
         files.add(new FileEntry("src/main/codenameone/codenameone_settings.properties", settings()));
+        LOG.debug("Generated scaffold with {} file(s)", files.size());
         return new ScaffoldResponse(files);
     }
 
