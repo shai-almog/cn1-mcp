@@ -1,0 +1,15 @@
+Label {
+    color: #202020;
+}
+
+@media platform-and {
+    Label { color: #0a8f08; }
+}
+
+@media platform-ios {
+    Label { color: #c62828; }
+}
+
+@media density-very-high, density-hd, density-2hd {
+    Label { font-size: 2.6mm; }
+}

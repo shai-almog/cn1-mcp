@@ -1,0 +1,14 @@
+PrimaryButton {
+    cn1-derive: Button;
+    background-color: #0052a3;
+    color: white;
+}
+
+PrimaryButton.pressed {
+    background-color: #003d78;
+}
+
+PrimaryButton.disabled {
+    background-color: #7ba8d9;
+    color: #f0f3f8;
+}

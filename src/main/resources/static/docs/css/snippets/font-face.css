@@ -1,0 +1,10 @@
+@font-face {
+    font-family: "Montserrat";
+    src: url(res/Montserrat-Regular.ttf);
+}
+
+Heading {
+    font-family: "Montserrat";
+    font-size: 4mm;
+    text-align: center;
+}

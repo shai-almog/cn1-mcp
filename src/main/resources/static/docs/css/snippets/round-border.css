@@ -1,0 +1,8 @@
+Avatar {
+    border: 2px #3399ff cn1-round-border;
+    cn1-box-shadow-color: rgba(0, 0, 0, 0.25);
+    cn1-box-shadow-spread: 0.5mm;
+    cn1-box-shadow-h: 0;
+    cn1-box-shadow-v: 0.5mm;
+    cn1-box-shadow-blur: 1mm;
+}
