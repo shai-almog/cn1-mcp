@@ -1,0 +1,25 @@
+#Device {
+    min-resolution: 120dpi;
+    max-resolution: 480dpi;
+}
+
+#Constants {
+    defaultFontSizeInt: 18;
+    defaultDesktopFontSizeInt: 14;
+}
+
+Default {
+    font-family: "native:MainRegular";
+    color: #202020;
+}
+
+Button {
+    padding: 2mm 3mm;
+    border: 1pt solid #3366ff;
+    cn1-background-type: cn1-image-scaled-fill;
+    background: linear-gradient(0deg, #6fa8ff, #2a5cc6);
+}
+
+Button.pressed {
+    background-color: #204c9b;
+}

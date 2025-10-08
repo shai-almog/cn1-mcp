@@ -40,5 +40,19 @@
 ## Theming
 - Prefer UIIDs + CN1 CSS/Theme. Minimize per-component, hard-coded styles.
 
+## CSS Support (Codename One Theme Compiler)
+- See the `css/` subdirectory in this folder for topic-specific guides and ready-to-copy snippets. Start with `css/Overview.md`.
+- Selectors map to UIIDs, with `.pressed`, `.selected`, `.unselected`, and `.disabled` as the built-in pseudo classes for component state. Use comma lists for multiple UIIDs and `cn1-derive` for inheritance.
+- `#Device`, `#Constants`, and `Default` selectors respectively constrain generated resolutions, declare theme constants (including multi-images), and populate the implicit base UIID.
+- Standard properties include padding/margin, border (and variants), border-radius, background/background-image/background-repeat, border-image/border-image-slice, font*, color, text-align, text-decoration (including `cn1-3d` variants), opacity, box-shadow, and width/height (for asset generation).
+- Codename One extensions cover `cn1-source-dpi`, `cn1-background-type`, `cn1-derive`, `cn1-9patch` (deprecated), and the `cn1-box-shadow-*` family for round/pill borders.
+- CSS variables via `var(--name, fallback)` are supported inside property values; define them in `#Constants` or selectors.
+- Complex borders/backgrounds fall back to 9-piece images when they can’t be rendered natively; use `cn1-round-border`, `cn1-pill-border`, or simplified gradients/shadows to avoid bloating the resource file.
+- Background precedence: image borders override background images, which override colors. Use `border: none` to reveal lower-priority backgrounds.
+- Images can be batched via comma-separated `background-image` declarations. Remote URLs are allowed for single assets (including fonts) but multi-image inputs must be local and organized by density (`verylow.png`, `low.png`, … `4k.png`).
+- Fonts default to `native:*` families. Bundle TTF/OTF fonts with `@font-face` (local, HTTP(S), or `github://` sources) and normalize base sizes with constants like `defaultFontSizeInt` and `defaultDesktopFontSizeInt`.
+- Media queries accept only `platform-*`, `device-*`, and `density-*`. Terms separated by commas combine (`OR` within type, `AND` across types). Precedence favors media-query styles, then more-specific query groups, with tie-breaker order platform > device > density. Matching font-scale constants (e.g., `device-desktop-font-scale`) multiply together.
+
 ## Lifecycle
 - Respect `init/start/stop/destroy` flow. Show forms from `start()` or on the EDT.
+
