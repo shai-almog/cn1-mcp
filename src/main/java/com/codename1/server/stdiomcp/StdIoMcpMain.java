@@ -214,7 +214,7 @@ public class StdIoMcpMain {
                                     writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of("contents", List.of(content))));
                                 } catch (IOException e) {
                                     LOG.error("Failed to load guide {} for request id={}: {}", guideId, req.id, e.getMessage(), e);
-                                    writeJson(out, mapper, new RpcRes("2.0", req.id, null, Map.of(
+                                    writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of(
                                         "code", -32001,
                                         "message", "Failed to load guide: " + e.getMessage()
                                     )));
