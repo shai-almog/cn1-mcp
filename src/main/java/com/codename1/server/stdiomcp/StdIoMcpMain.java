@@ -5,6 +5,7 @@ import com.codename1.server.mcp.dto.CompileRequest;
 import com.codename1.server.mcp.dto.FileEntry;
 import com.codename1.server.mcp.dto.LintRequest;
 import com.codename1.server.mcp.service.ExternalCompileService;
+import com.codename1.server.mcp.service.GuideService;
 import com.codename1.server.mcp.service.LintService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -21,6 +22,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -46,6 +49,11 @@ public class StdIoMcpMain {
 
             var lint = ctx.getBean(LintService.class);
             var compile = ctx.getBean(ExternalCompileService.class);
+            var guides = ctx.getBean(GuideService.class);
+
+            final String defaultMode = "default";
+            final String guideMode = "cn1_guide";
+            final String[] activeMode = { defaultMode };
 
             var mapper = new ObjectMapper();
             try (var in = new BufferedReader(new InputStreamReader(inStream, StandardCharsets.UTF_8));
@@ -78,7 +86,8 @@ public class StdIoMcpMain {
                                         "capabilities", Map.of(
                                                 "tools", Map.of(),
                                                 "prompts", Map.of(),
-                                                "resources", Map.of()
+                                                "resources", Map.of(),
+                                                "modes", Map.of()
                                         )
                                 );
                                 LOG.info("Handled initialize request id={}", req.id);
@@ -162,8 +171,82 @@ public class StdIoMcpMain {
                                 writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of("prompts", List.of())));
                             }
                             case "resources/list" -> {
-                                LOG.info("Listing resources for request id={}", req.id);
-                                writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of("resources", List.of())));
+                                LOG.info("Listing resources for request id={} mode={} ", req.id, activeMode[0]);
+                                List<Map<String,Object>> resources;
+                                if (guideMode.equals(activeMode[0])) {
+                                    resources = guides.listGuides().stream().map(guide -> {
+                                        Map<String,Object> descriptor = new LinkedHashMap<>();
+                                        descriptor.put("uri", "guide://" + guide.id());
+                                        descriptor.put("name", guide.title());
+                                        descriptor.put("description", guide.description());
+                                        descriptor.put("mimeType", "text/markdown");
+                                        return descriptor;
+                                    }).collect(java.util.stream.Collectors.toList());
+                                } else {
+                                    resources = List.of();
+                                }
+                                writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of("resources", resources)));
+                            }
+                            case "resources/read" -> {
+                                Map<String,Object> params = req.params != null ? req.params : Map.of();
+                                String uri = (String) params.get("uri");
+                                if (uri == null) {
+                                    throw new IllegalArgumentException("Missing uri parameter for resources/read");
+                                }
+                                if (!guideMode.equals(activeMode[0])) {
+                                    throw new IllegalStateException("Guide resources are only available in guide mode");
+                                }
+                                final String guideScheme = "guide://";
+                                if (!uri.startsWith(guideScheme)) {
+                                    throw new IllegalArgumentException("Unsupported guide uri: " + uri);
+                                }
+                                String guideId = uri.substring(guideScheme.length());
+                                var guide = guides.findGuide(guideId)
+                                        .orElseThrow(() -> new IllegalArgumentException("Unknown guide: " + guideId));
+                                String text = guides.loadGuide(guideId);
+                                Map<String,Object> content = new LinkedHashMap<>();
+                                content.put("uri", uri);
+                                content.put("name", guide.title());
+                                content.put("mimeType", "text/markdown");
+                                content.put("text", text);
+                                LOG.info("Read guide {} ({} chars) for request id={}", guideId, text.length(), req.id);
+                                writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of("contents", List.of(content))));
+                            }
+                            case "modes/list" -> {
+                                LOG.info("Listing modes for request id={}", req.id);
+                                List<Map<String,Object>> modes = new ArrayList<>();
+                                Map<String,Object> defaultDescriptor = new LinkedHashMap<>();
+                                defaultDescriptor.put("name", defaultMode);
+                                defaultDescriptor.put("description", "Default Codename One tooling");
+                                defaultDescriptor.put("instructions", "Use lint/compile tools for general development.");
+                                defaultDescriptor.put("isDefault", Boolean.TRUE);
+                                modes.add(defaultDescriptor);
+
+                                Map<String,Object> guideDescriptor = new LinkedHashMap<>();
+                                guideDescriptor.put("name", guideMode);
+                                guideDescriptor.put("description", "Browse Codename One onboarding guides");
+                                guideDescriptor.put("instructions", "Call resources/list and resources/read to view Markdown guides.");
+                                guideDescriptor.put("isDefault", Boolean.FALSE);
+                                modes.add(guideDescriptor);
+                                Map<String,Object> result = new LinkedHashMap<>();
+                                result.put("modes", modes);
+                                result.put("current", activeMode[0]);
+                                writeJson(out, mapper, new RpcRes("2.0", req.id, result));
+                            }
+                            case "modes/set" -> {
+                                Map<String,Object> params = req.params != null ? req.params : Map.of();
+                                String requested = (String) params.get("mode");
+                                if (requested == null) {
+                                    throw new IllegalArgumentException("Missing mode parameter for modes/set");
+                                }
+                                if (!requested.equals(defaultMode) && !requested.equals(guideMode)) {
+                                    throw new IllegalArgumentException("Unsupported mode: " + requested);
+                                }
+                                activeMode[0] = requested;
+                                LOG.info("Mode set to {} for request id={}", requested, req.id);
+                                writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of(
+                                        "mode", requested
+                                )));
                             }
 
                             default -> {
