@@ -50,7 +50,6 @@ public class ExternalCompileService {
                     "-source", "8", "-target", "8",
                     "-Xlint:all",
                     "-extdirs", "",
-                    "-bootclasspath", boot.toString(),
                     "-classpath", cn1.toString()
             ));
             if (Files.exists(boot)) {
