@@ -203,14 +203,22 @@ public class StdIoMcpMain {
                                 String guideId = uri.substring(guideScheme.length());
                                 var guide = guides.findGuide(guideId)
                                         .orElseThrow(() -> new IllegalArgumentException("Unknown guide: " + guideId));
-                                String text = guides.loadGuide(guideId);
-                                Map<String,Object> content = new LinkedHashMap<>();
-                                content.put("uri", uri);
-                                content.put("name", guide.title());
-                                content.put("mimeType", "text/markdown");
-                                content.put("text", text);
-                                LOG.info("Read guide {} ({} chars) for request id={}", guideId, text.length(), req.id);
-                                writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of("contents", List.of(content))));
+                                try {
+                                    String text = guides.loadGuide(guideId);
+                                    Map<String,Object> content = new LinkedHashMap<>();
+                                    content.put("uri", uri);
+                                    content.put("name", guide.title());
+                                    content.put("mimeType", "text/markdown");
+                                    content.put("text", text);
+                                    LOG.info("Read guide {} ({} chars) for request id={}", guideId, text.length(), req.id);
+                                    writeJson(out, mapper, new RpcRes("2.0", req.id, Map.of("contents", List.of(content))));
+                                } catch (IOException e) {
+                                    LOG.error("Failed to load guide {} for request id={}: {}", guideId, req.id, e.getMessage(), e);
+                                    writeJson(out, mapper, new RpcRes("2.0", req.id, null, Map.of(
+                                        "code", -32001,
+                                        "message", "Failed to load guide: " + e.getMessage()
+                                    )));
+                                }
                             }
                             case "modes/list" -> {
                                 LOG.info("Listing modes for request id={}", req.id);
