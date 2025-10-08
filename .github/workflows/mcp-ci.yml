@@ -31,18 +31,21 @@ jobs:
         include:
           - os: ubuntu-latest
             mvnw: ./mvnw
+            shell: bash
             artifact-name: cn1-mcp-stdio-linux
             binary-path: target/cn1-mcp-stdio
             artifact-file-name: cn1-mcp-stdio-linux
             binary-glob: cn1-mcp-stdio*
           - os: macos-latest
             mvnw: ./mvnw
+            shell: bash
             artifact-name: cn1-mcp-stdio-macos
             binary-path: target/cn1-mcp-stdio
             artifact-file-name: cn1-mcp-stdio-macos
             binary-glob: cn1-mcp-stdio*
           - os: windows-latest
             mvnw: ./mvnw.cmd
+            shell: pwsh
             artifact-name: cn1-mcp-stdio-windows
             binary-path: target/cn1-mcp-stdio.exe
             artifact-file-name: cn1-mcp-stdio-windows.exe
@@ -60,18 +63,25 @@ jobs:
           components: native-image
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run MCP tests with native profile (Linux)
-        if: runner.os == 'Linux'
+      - name: Run MCP tests with native profile (POSIX)
+        if: runner.os != 'Windows'
         env:
           SPRING_PROFILES_ACTIVE: stdio
-        run: ${{ matrix.mvnw }} -B -ntp -Pnative test
+        run: ./mvnw -B -ntp -Pnative test
         shell: bash
+
+      - name: Run MCP tests with native profile (Windows)
+        if: runner.os == 'Windows'
+        env:
+          SPRING_PROFILES_ACTIVE: stdio
+        run: .\mvnw.cmd -B -ntp -Pnative test
+        shell: pwsh
 
       - name: Build GraalVM native image (stdio mode, POSIX)
         if: runner.os != 'Windows'
         env:
           SPRING_PROFILES_ACTIVE: stdio
-        run: ${{ matrix.mvnw }} -B -ntp -Pnative -DskipTests native:compile
+        run: ./mvnw -B -ntp -Pnative -DskipTests native:compile
         shell: bash
 
       - name: Build GraalVM native image (stdio mode, Windows)

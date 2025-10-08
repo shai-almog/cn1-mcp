@@ -47,8 +47,29 @@ class Jdk8ManagerFromResourceTest {
         byte[] tgz = makeMiniJdkTarGz();
         var ex = new InMemExtractor(tmp, "v1", tgz);
         var mgr = new Jdk8ManagerFromResource(ex, "/cn1libs/jdk8/temurin8-linux-x64.tar.gz", "release");
-        Path javac = mgr.ensureJavac8();
-        assertTrue(Files.isExecutable(javac), "javac should be executable");
-        assertEquals("javac", javac.getFileName().toString());
+        withOsName("linux", () -> {
+            Path javac = mgr.ensureJavac8();
+            assertTrue(Files.isExecutable(javac), "javac should be executable");
+            assertEquals("javac", javac.getFileName().toString());
+        });
+    }
+
+    private void withOsName(String value, ThrowingRunnable runnable) throws Exception {
+        String original = System.getProperty("os.name");
+        System.setProperty("os.name", value);
+        try {
+            runnable.run();
+        } finally {
+            if (original != null) {
+                System.setProperty("os.name", original);
+            } else {
+                System.clearProperty("os.name");
+            }
+        }
+    }
+
+    @FunctionalInterface
+    private interface ThrowingRunnable {
+        void run() throws Exception;
     }
 }

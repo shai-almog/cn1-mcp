@@ -225,7 +225,7 @@ public class GlobalExtractor {
         }
     }
 
-    private InputStream openUrl(String url) throws IOException {
+    protected InputStream openUrl(String url) throws IOException {
         return new URL(url).openStream();
     }
 

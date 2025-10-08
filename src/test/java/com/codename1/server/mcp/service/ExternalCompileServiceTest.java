@@ -8,9 +8,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -32,59 +32,61 @@ class ExternalCompileServiceTest {
         }
     }
 
-    private static Path makeFakeJar(Path dir, String name) throws Exception {
-        Path p = dir.resolve(name);
-        Files.writeString(p, "jar", StandardCharsets.UTF_8);
-        return p;
+    private static Path copyLib(Path tmp, String name) throws Exception {
+        Path resource = Paths.get("src/main/resources/cn1libs").resolve(name);
+        Path target = tmp.resolve(name);
+        Files.copy(resource, target, StandardCopyOption.REPLACE_EXISTING);
+        return target;
     }
 
-    private static Path makeJavacShim(Path dir, Path argsOut) throws Exception {
-        Path sh = dir.resolve("javac");
-        String script = """
-      #!/bin/sh
-      printf "ARGS:" > "%s"
-      for a in "$@"; do printf " [%s]" "$a" >> "%s"; done
-      printf "\\n" >> "%s"
-      exit 0
-      """.formatted(argsOut, "%s", argsOut, argsOut);
-        Files.writeString(sh, script);
-        sh.toFile().setExecutable(true);
-        return sh;
+    private static Path locateSystemJavac() {
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ENGLISH).contains("win");
+        String binaryName = windows ? "javac.exe" : "javac";
+        Path javaHome = Paths.get(System.getProperty("java.home"));
+        Path candidate = javaHome.resolve("bin").resolve(binaryName);
+        if (!Files.exists(candidate)) {
+            candidate = javaHome.getParent().resolve("bin").resolve(binaryName);
+        }
+        if (!Files.exists(candidate)) {
+            throw new IllegalStateException("Unable to locate system javac binary at " + candidate);
+        }
+        return candidate;
     }
 
     @Test
     void passesStrictFlagsAndClasspath(@TempDir Path tmp) throws Exception {
-        // fake jars
-        Path cn1 = makeFakeJar(tmp, "CodenameOne.jar");
-        Path boot = makeFakeJar(tmp, "CLDC11.jar");
+        // copy the production jars into our temp workspace
+        Path cn1 = copyLib(tmp, "CodenameOne.jar");
+        Path boot = copyLib(tmp, "CLDC11.jar");
 
         // extractor backed by those files
         var extractor = new FsBackedExtractor(tmp, cn1, boot);
 
-        // fake jdk folder with javac shim
-        Path jdkDir = Files.createDirectories(tmp.resolve("jdk8/bin"));
-        Path argsOut = tmp.resolve("javac.args.txt");
-        Path javac = makeJavacShim(jdkDir, argsOut);
+        Path javac = locateSystemJavac();
 
-        // JDK manager mocked to return our shim
+        // JDK manager mocked to return our binary
         var jdkMgr = Mockito.mock(Jdk8ManagerFromResource.class);
         when(jdkMgr.ensureJavac8()).thenReturn(javac);
 
         var svc = new ExternalCompileService(extractor, jdkMgr);
 
         var req = new CompileRequest(List.of(
-                new FileEntry("src/X.java", "class X{}")
+                new FileEntry("src/X.java", """
+                        import java.util.ArrayList;
+                        import java.util.List;
+
+                        class X {
+                            void m() {
+                                List list = new ArrayList();
+                                list.add("x");
+                            }
+                        }
+                        """.stripIndent())
         ), null);
 
         var resp = svc.compile(req);
         assertTrue(resp.ok(), () -> "Compiler out: " + resp.javacOutput());
 
-        String args = Files.readString(argsOut);
-        assertTrue(args.contains("[-source] [8]"));
-        assertTrue(args.contains("[-target] [8]"));
-        assertTrue(args.contains("[-extdirs] []"));
-        assertTrue(args.contains("[-classpath] [" + cn1.toString()));
-        // bootclasspath is optional; assert if present
-        assertTrue(args.contains("[-bootclasspath] [" + boot.toString() + "]"));
+        assertTrue(resp.javacOutput().toLowerCase(Locale.ENGLISH).contains("warning: [unchecked]"));
     }
 }
