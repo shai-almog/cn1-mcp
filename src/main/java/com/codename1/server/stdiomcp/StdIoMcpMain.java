@@ -5,10 +5,12 @@ import com.codename1.server.mcp.dto.CompileRequest;
 import com.codename1.server.mcp.dto.CssCompileRequest;
 import com.codename1.server.mcp.dto.FileEntry;
 import com.codename1.server.mcp.dto.LintRequest;
+import com.codename1.server.mcp.dto.NativeStubRequest;
 import com.codename1.server.mcp.service.CssCompileService;
 import com.codename1.server.mcp.service.ExternalCompileService;
 import com.codename1.server.mcp.service.GuideService;
 import com.codename1.server.mcp.service.LintService;
+import com.codename1.server.mcp.service.NativeStubService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +55,7 @@ public class StdIoMcpMain {
             var compile = ctx.getBean(ExternalCompileService.class);
             var cssCompile = ctx.getBean(CssCompileService.class);
             var guides = ctx.getBean(GuideService.class);
+            var nativeStubs = ctx.getBean(NativeStubService.class);
 
             final String defaultMode = "default";
             final String guideMode = "cn1_guide";
@@ -148,6 +151,28 @@ public class StdIoMcpMain {
                                                         ),
                                                         "required", List.of("files")
                                                 )
+                                        ),
+                                        Map.of(
+                                                "name","cn1_generate_native_stubs",
+                                                "description","Generate Codename One native interface stubs",
+                                                "inputSchema", Map.of(
+                                                        "type","object",
+                                                        "properties", Map.of(
+                                                                "interfaceName", Map.of("type","string"),
+                                                                "files", Map.of(
+                                                                        "type","array",
+                                                                        "items", Map.of(
+                                                                                "type","object",
+                                                                                "properties", Map.of(
+                                                                                        "path", Map.of("type","string"),
+                                                                                        "content", Map.of("type","string")
+                                                                                ),
+                                                                                "required", List.of("path","content")
+                                                                        )
+                                                                )
+                                                        ),
+                                                        "required", List.of("interfaceName","files")
+                                                )
                                         )
                                 );
                                 LOG.info("Listed tools for request id={} ({} tools)", req.id, tools.size());
@@ -181,6 +206,14 @@ public class StdIoMcpMain {
                                         String outputPath = (String) params.get("outputPath");
                                         LOG.info("Invoking CSS compile tool for request id={} ({} files) input={}", req.id, files.size(), inputPath);
                                         toolPayload = cssCompile.compile(new CssCompileRequest(files, inputPath, outputPath));
+                                    }
+                                    case "cn1_generate_native_stubs" -> {
+                                        @SuppressWarnings("unchecked")
+                                        var files = ((List<Map<String,Object>>) params.get("files")).stream()
+                                                .map(m -> new FileEntry((String)m.get("path"), (String)m.get("content"))).toList();
+                                        String interfaceName = (String) params.get("interfaceName");
+                                        LOG.info("Invoking native stub generator for request id={} interface={} ({} files)", req.id, interfaceName, files.size());
+                                        toolPayload = nativeStubs.generate(new NativeStubRequest(files, interfaceName));
                                     }
                                     default -> throw new IllegalArgumentException("Unknown tool: " + name);
                                 }

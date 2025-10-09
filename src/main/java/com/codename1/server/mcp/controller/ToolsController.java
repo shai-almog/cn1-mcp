@@ -10,6 +10,8 @@ import com.codename1.server.mcp.dto.ExplainRequest;
 import com.codename1.server.mcp.dto.ExplainResponse;
 import com.codename1.server.mcp.dto.LintRequest;
 import com.codename1.server.mcp.dto.LintResponse;
+import com.codename1.server.mcp.dto.NativeStubRequest;
+import com.codename1.server.mcp.dto.NativeStubResponse;
 import com.codename1.server.mcp.dto.Patch;
 import com.codename1.server.mcp.dto.ScaffoldRequest;
 import com.codename1.server.mcp.dto.ScaffoldResponse;
@@ -18,6 +20,7 @@ import com.codename1.server.mcp.dto.SnippetsResponse;
 import com.codename1.server.mcp.service.CssCompileService;
 import com.codename1.server.mcp.service.ExternalCompileService;
 import com.codename1.server.mcp.service.LintService;
+import com.codename1.server.mcp.service.NativeStubService;
 import com.codename1.server.mcp.service.ScaffoldService;
 import com.codename1.server.mcp.service.SnippetService;
 import org.slf4j.Logger;
@@ -34,13 +37,15 @@ public class ToolsController {
     private final CssCompileService cssCompile;
     private final ScaffoldService scaffold;
     private final SnippetService snippets;
+    private final NativeStubService nativeStubs;
 
-    public ToolsController(LintService l, ExternalCompileService c, CssCompileService css, ScaffoldService s, SnippetService sn) {
+    public ToolsController(LintService l, ExternalCompileService c, CssCompileService css, ScaffoldService s, SnippetService sn, NativeStubService ns) {
         this.lint = l;
         this.compile = c;
         this.cssCompile = css;
         this.scaffold = s;
         this.snippets = sn;
+        this.nativeStubs = ns;
     }
 
     @PostMapping(value="/cn1_lint_code", consumes=MediaType.APPLICATION_JSON_VALUE)
@@ -92,5 +97,12 @@ public class ToolsController {
       + com.codename1.ui.Display.getInstance().callSerially(() -> { form.show(); });
       """);
         return new AutoFixResponse(patched, java.util.List.of(patch));
+    }
+
+    @PostMapping(value="/cn1_generate_native_stubs", consumes=MediaType.APPLICATION_JSON_VALUE)
+    public NativeStubResponse generateNativeStubs(@RequestBody NativeStubRequest req) {
+        int fileCount = req.files() != null ? req.files().size() : 0;
+        LOG.info("HTTP native stub generation request received for interface {} ({} source files)", req.interfaceName(), fileCount);
+        return nativeStubs.generate(req);
     }
 }
