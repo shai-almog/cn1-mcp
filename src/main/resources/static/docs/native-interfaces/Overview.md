@@ -20,6 +20,7 @@ Codename One native interfaces expose platform APIs, third-party SDKs, and bespo
 2. **Invoke the MCP tool** with the fully-qualified interface name and the source files that contain it.
 3. **Copy the generated stubs** into your project's `native/<platform>` folders and fill in the platform logic.
 4. **Call the interface** using `NativeLookup.create(MyNative.class)` from your Java code.
+5. **Add build hints** for any extra permissions, entitlements, or manifest tweaks required by the native code. See [Build Hints for Native Interfaces](BuildHints.md).
 
 ## Interface Requirements
 

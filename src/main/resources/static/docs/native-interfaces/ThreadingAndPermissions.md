@@ -17,5 +17,7 @@ android.permission.READ_CALENDAR.maxSdkVersion=28
 ```
 
 Alternatively inject raw XML using `android.xpermissions=<uses-permission android:name="android.permission.READ_CALENDAR" />`.
+See [Build Hints for Native Interfaces](BuildHints.md) for additional targets and formatting
+guidelines.
 
 Native libraries (`.jar`, `.a`, etc.) should be placed inside the relevant `native/<platform>` folder so the build server packages them automatically.
