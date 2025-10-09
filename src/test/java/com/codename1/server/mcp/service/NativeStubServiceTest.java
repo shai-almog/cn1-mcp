@@ -39,6 +39,13 @@ class NativeStubServiceTest {
                 .orElseThrow();
         assertTrue(androidStub.content().contains("return null;"));
         assertTrue(androidStub.content().contains("return 0;"));
+
+        var iosStub = response.files().stream()
+                .filter(f -> f.path().equals("ios/com_mycompany_myapp_MyNativeImpl.m"))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(iosStub.content().contains("return nil;"));
+        assertTrue(iosStub.content().contains("return NO;"));
     }
 
     @Test
@@ -58,5 +65,24 @@ class NativeStubServiceTest {
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.generate(request));
         assertTrue(ex.getMessage().contains("Unsupported return type"));
+    }
+
+    @Test
+    void rejectsPathsOutsideWorkspace() {
+        String src = """
+                package com.evil;
+
+                import com.codename1.system.NativeInterface;
+
+                public interface Escapes extends NativeInterface {
+                    void nope();
+                }
+                """;
+
+        var request = new NativeStubRequest(List.of(new FileEntry("../../evil/Escapes.java", src)),
+                "com.evil.Escapes");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.generate(request));
+        assertTrue(ex.getMessage().contains("escapes workspace"));
     }
 }

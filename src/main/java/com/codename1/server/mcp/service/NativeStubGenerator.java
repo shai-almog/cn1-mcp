@@ -28,7 +28,7 @@ class NativeStubGenerator {
     NativeStubGenerator(Class<?> nativeInterface) {
         this.nativeInterface = nativeInterface;
         this.declaredMethods = Arrays.stream(nativeInterface.getMethods())
-                .filter(m -> !m.getDeclaringClass().getName().equals(NATIVE_INTERFACE_FQN))
+                .filter(m -> !m.getDeclaringClass().equals(Object.class))
                 .toList();
     }
 
@@ -211,7 +211,7 @@ class NativeStubGenerator {
                     impl.append("{\n");
                 }
             }
-            impl.append("    ").append(defaultReturnStatement(m.getReturnType()));
+            impl.append("    ").append(defaultObjectiveCReturnStatement(m.getReturnType()));
             impl.append("}\n\n");
         }
         impl.append("@end\n");
@@ -291,6 +291,16 @@ class NativeStubGenerator {
             case Class<?> type when type == Character.class || type == Character.TYPE -> "return (char)0;\n";
             case Class<?> type when type == Byte.class || type == Byte.TYPE -> "return (byte)0;\n";
             case Class<?> type when type == Short.class || type == Short.TYPE -> "return (short)0;\n";
+            default -> "return 0;\n";
+        };
+    }
+
+    private static String defaultObjectiveCReturnStatement(Class<?> returnType) {
+        return switch (returnType) {
+            case Class<?> type when type == Void.TYPE || type == Void.class -> "// TODO implement\n";
+            case Class<?> type when type == String.class || type.isArray() -> "return nil;\n";
+            case Class<?> type when type.getName().equals("com.codename1.ui.PeerComponent") -> "return NULL;\n";
+            case Class<?> type when type == Boolean.class || type == Boolean.TYPE -> "return NO;\n";
             default -> "return 0;\n";
         };
     }

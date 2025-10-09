@@ -56,7 +56,10 @@ public class NativeStubService {
         try {
             Map<String, FileEntry> provided = new LinkedHashMap<>();
             for (FileEntry entry : request.files()) {
-                Path dest = sourceDir.resolve(entry.path());
+                if (entry.path() == null || entry.path().isBlank()) {
+                    throw new IllegalArgumentException("File path is required");
+                }
+                Path dest = resolveRelativePath(sourceDir, entry.path());
                 Files.createDirectories(dest.getParent());
                 Files.writeString(dest, entry.content(), StandardCharsets.UTF_8);
                 provided.put(entry.path(), entry);
@@ -117,9 +120,21 @@ public class NativeStubService {
         if (provided.containsKey(relativePath)) {
             return;
         }
-        Path dest = sourceDir.resolve(relativePath);
+        Path dest = resolveRelativePath(sourceDir, relativePath);
         Files.createDirectories(dest.getParent());
         Files.writeString(dest, content, StandardCharsets.UTF_8);
+    }
+
+    private static Path resolveRelativePath(Path sourceDir, String requestedPath) {
+        Path relative = Path.of(requestedPath);
+        if (relative.isAbsolute()) {
+            throw new IllegalArgumentException("File path must be relative: " + requestedPath);
+        }
+        Path normalized = sourceDir.resolve(relative).normalize();
+        if (!normalized.startsWith(sourceDir)) {
+            throw new IllegalArgumentException("File path escapes workspace: " + requestedPath);
+        }
+        return normalized;
     }
 
     private static void cleanup(Path dir) {
