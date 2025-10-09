@@ -42,18 +42,27 @@ public class Jdk8ManagerFromResource {
 
     /** Ensures the bundled JDK 8 archive is extracted, returns path to .../bin/javac */
     public Path ensureJavac8() throws IOException {
-        String os = System.getProperty("os.name", "linux").toLowerCase(Locale.ENGLISH);
-        LOG.info("Resolving bundled JDK8 for operating system {}", os);
-        if (os.contains("win")) {
-            return ensureFromUrl(windowsArchiveUrl, true, "Windows");
-        }
-        if (os.contains("mac") || os.contains("darwin")) {
-            return ensureFromUrl(macArchiveUrl, false, "macOS");
-        }
-        return ensureFromResource(linuxArchiveResource);
+        return ensureBinary("javac");
     }
 
-    private Path ensureFromResource(String resource) throws IOException {
+    /** Ensures the bundled JDK 8 archive is extracted, returns path to .../bin/java */
+    public Path ensureJava8() throws IOException {
+        return ensureBinary("java");
+    }
+
+    private Path ensureBinary(String binary) throws IOException {
+        String os = System.getProperty("os.name", "linux").toLowerCase(Locale.ENGLISH);
+        LOG.info("Resolving bundled JDK8 binary '{}' for operating system {}", binary, os);
+        if (os.contains("win")) {
+            return ensureFromUrl(windowsArchiveUrl, true, "Windows", binary);
+        }
+        if (os.contains("mac") || os.contains("darwin")) {
+            return ensureFromUrl(macArchiveUrl, false, "macOS", binary);
+        }
+        return ensureFromResource(linuxArchiveResource, binary);
+    }
+
+    private Path ensureFromResource(String resource, String binary) throws IOException {
         if (resource == null || resource.isBlank()) {
             throw new IOException("No bundled JDK8 resource configured for Linux");
         }
@@ -63,10 +72,10 @@ public class Jdk8ManagerFromResource {
         LOG.info("Ensuring Linux JDK8 resource {} -> folder {}", resource, folderName);
         Path jdkRoot = extractor.ensureArchiveExtracted(resource, folderName);
         Path root = findJdkRoot(jdkRoot);
-        return resolveJavac(root, type == GlobalExtractor.ArchiveType.ZIP);
+        return resolveBinary(root, type == GlobalExtractor.ArchiveType.ZIP, binary);
     }
 
-    private Path ensureFromUrl(String url, boolean windows, String label) throws IOException {
+    private Path ensureFromUrl(String url, boolean windows, String label, String binary) throws IOException {
         if (url == null || url.isBlank()) {
             throw new IOException("No JDK8 download URL configured for " + label);
         }
@@ -75,7 +84,7 @@ public class Jdk8ManagerFromResource {
         LOG.info("Ensuring remote JDK8 {} for {} -> folder {}", url, label, folderName);
         Path jdkRoot = extractor.ensureArchiveExtractedFromUrl(url, folderName);
         Path root = findJdkRoot(jdkRoot);
-        return resolveJavac(root, windows);
+        return resolveBinary(root, windows, binary);
     }
 
     private Path findJdkRoot(Path base) throws IOException {
@@ -104,12 +113,13 @@ public class Jdk8ManagerFromResource {
         return null;
     }
 
-    private Path resolveJavac(Path root, boolean windows) throws IOException {
-        Path javac = root.resolve(windows ? "bin/javac.exe" : "bin/javac");
-        if (!Files.exists(javac)) throw new IOException("javac not found at " + javac);
-        if (!windows && !Files.isExecutable(javac)) throw new IOException("javac not executable at " + javac);
-        LOG.debug("Resolved javac executable at {}", javac);
-        return javac;
+    private Path resolveBinary(Path root, boolean windows, String binary) throws IOException {
+        String executableName = windows ? binary + ".exe" : binary;
+        Path executable = root.resolve("bin").resolve(executableName);
+        if (!Files.exists(executable)) throw new IOException(binary + " not found at " + executable);
+        if (!windows && !Files.isExecutable(executable)) throw new IOException(binary + " not executable at " + executable);
+        LOG.debug("Resolved {} executable at {}", binary, executable);
+        return executable;
     }
 
     private static String stripArchiveExtension(String name) {
