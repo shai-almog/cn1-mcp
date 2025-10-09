@@ -2,8 +2,10 @@ package com.codename1.server.stdiomcp;
 
 import com.codename1.server.mcp.McpApplication;
 import com.codename1.server.mcp.dto.CompileRequest;
+import com.codename1.server.mcp.dto.CssCompileRequest;
 import com.codename1.server.mcp.dto.FileEntry;
 import com.codename1.server.mcp.dto.LintRequest;
+import com.codename1.server.mcp.service.CssCompileService;
 import com.codename1.server.mcp.service.ExternalCompileService;
 import com.codename1.server.mcp.service.GuideService;
 import com.codename1.server.mcp.service.LintService;
@@ -49,6 +51,7 @@ public class StdIoMcpMain {
 
             var lint = ctx.getBean(LintService.class);
             var compile = ctx.getBean(ExternalCompileService.class);
+            var cssCompile = ctx.getBean(CssCompileService.class);
             var guides = ctx.getBean(GuideService.class);
 
             final String defaultMode = "default";
@@ -122,6 +125,29 @@ public class StdIoMcpMain {
                                                         ),
                                                         "required", List.of("files")
                                                 )
+                                        ),
+                                        Map.of(
+                                                "name","cn1_compile_css",
+                                                "description","Compile Codename One CSS using designer.jar",
+                                                "inputSchema", Map.of(
+                                                        "type","object",
+                                                        "properties", Map.of(
+                                                                "files", Map.of(
+                                                                        "type","array",
+                                                                        "items", Map.of(
+                                                                                "type","object",
+                                                                                "properties", Map.of(
+                                                                                        "path", Map.of("type","string"),
+                                                                                        "content", Map.of("type","string")
+                                                                                ),
+                                                                                "required", List.of("path","content")
+                                                                        )
+                                                                ),
+                                                                "inputPath", Map.of("type","string"),
+                                                                "outputPath", Map.of("type","string")
+                                                        ),
+                                                        "required", List.of("files")
+                                                )
                                         )
                                 );
                                 LOG.info("Listed tools for request id={} ({} tools)", req.id, tools.size());
@@ -146,6 +172,15 @@ public class StdIoMcpMain {
                                                 .map(m -> new FileEntry((String)m.get("path"), (String)m.get("content"))).toList();
                                         LOG.info("Invoking compile tool for request id={} ({} files)", req.id, files.size());
                                         toolPayload = compile.compile(new CompileRequest(files, null));
+                                    }
+                                    case "cn1_compile_css" -> {
+                                        @SuppressWarnings("unchecked")
+                                        var files = ((List<Map<String,Object>>) params.get("files")).stream()
+                                                .map(m -> new FileEntry((String)m.get("path"), (String)m.get("content"))).toList();
+                                        String inputPath = (String) params.get("inputPath");
+                                        String outputPath = (String) params.get("outputPath");
+                                        LOG.info("Invoking CSS compile tool for request id={} ({} files) input={}", req.id, files.size(), inputPath);
+                                        toolPayload = cssCompile.compile(new CssCompileRequest(files, inputPath, outputPath));
                                     }
                                     default -> throw new IllegalArgumentException("Unknown tool: " + name);
                                 }

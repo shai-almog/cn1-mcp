@@ -4,6 +4,8 @@ import com.codename1.server.mcp.dto.AutoFixRequest;
 import com.codename1.server.mcp.dto.AutoFixResponse;
 import com.codename1.server.mcp.dto.CompileRequest;
 import com.codename1.server.mcp.dto.CompileResponse;
+import com.codename1.server.mcp.dto.CssCompileRequest;
+import com.codename1.server.mcp.dto.CssCompileResponse;
 import com.codename1.server.mcp.dto.ExplainRequest;
 import com.codename1.server.mcp.dto.ExplainResponse;
 import com.codename1.server.mcp.dto.LintRequest;
@@ -13,6 +15,7 @@ import com.codename1.server.mcp.dto.ScaffoldRequest;
 import com.codename1.server.mcp.dto.ScaffoldResponse;
 import com.codename1.server.mcp.dto.SnippetsRequest;
 import com.codename1.server.mcp.dto.SnippetsResponse;
+import com.codename1.server.mcp.service.CssCompileService;
 import com.codename1.server.mcp.service.ExternalCompileService;
 import com.codename1.server.mcp.service.LintService;
 import com.codename1.server.mcp.service.ScaffoldService;
@@ -28,12 +31,14 @@ public class ToolsController {
     private static final Logger LOG = LoggerFactory.getLogger(ToolsController.class);
     private final LintService lint;
     private final ExternalCompileService compile;
+    private final CssCompileService cssCompile;
     private final ScaffoldService scaffold;
     private final SnippetService snippets;
 
-    public ToolsController(LintService l, ExternalCompileService c, ScaffoldService s, SnippetService sn) {
+    public ToolsController(LintService l, ExternalCompileService c, CssCompileService css, ScaffoldService s, SnippetService sn) {
         this.lint = l;
         this.compile = c;
+        this.cssCompile = css;
         this.scaffold = s;
         this.snippets = sn;
     }
@@ -48,6 +53,13 @@ public class ToolsController {
     public CompileResponse compile(@RequestBody CompileRequest req) {
         LOG.info("HTTP compile request received with {} files", req.files().size());
         return compile.compile(req);
+    }
+
+    @PostMapping(value="/cn1_compile_css", consumes=MediaType.APPLICATION_JSON_VALUE)
+    public CssCompileResponse compileCss(@RequestBody CssCompileRequest req) {
+        int fileCount = req.files() != null ? req.files().size() : 0;
+        LOG.info("HTTP CSS compile request received with {} files (input={})", fileCount, req.inputPath());
+        return cssCompile.compile(req);
     }
 
     @PostMapping(value="/cn1_scaffold_project", consumes=MediaType.APPLICATION_JSON_VALUE)
