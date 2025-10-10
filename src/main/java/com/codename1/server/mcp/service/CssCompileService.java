@@ -34,20 +34,20 @@ import org.springframework.stereotype.Service;
 public class CssCompileService {
   private static final Logger LOG = LoggerFactory.getLogger(CssCompileService.class);
   private static final Pattern URL_PATTERN = Pattern.compile("url\\(([^)]+)\\)");
+  private static final String STUB_PNG_BASE64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAA"
+          + "AAC0lEQVR42mP8/x8AAwMB/YoLYiQAAAAASUVORK5CYII=";
+  private static final String STUB_JPEG_BASE64 =
+      "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP////////////////////////////////////////"
+          + "////////////2wBDAf//////////////////////////////////////////////////////////"
+          + "////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAA"
+          + "AAAAAAAAAAAAAAAAAf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF+AP/EABQRAQAAAA"
+          + "AAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8Af//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIB"
+          + "AT8Af//EABQRAQAAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Af//Z";
   private static final byte[] STUB_PNG =
-      Base64.getDecoder()
-          .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/YoLYiQAAAAASUVORK5CYII=");
+      Base64.getDecoder().decode(STUB_PNG_BASE64);
   private static final byte[] STUB_JPEG =
-      Base64.getDecoder()
-          .decode(
-              String.join(
-                  "",
-                  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP////////////////////////////////////////",
-                  "////////////2wBDAf//////////////////////////////////////////////////////////",
-                  "////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAA",
-                  "AAAAAAAAAAAAAAAAAf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF+AP/EABQRAQAAAA",
-                  "AAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8Af//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIBAT8Af//EABQRAQA",
-                  "AAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Af//Z"));
+      Base64.getDecoder().decode(STUB_JPEG_BASE64);
   private static final byte[] STUB_SVG =
       "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"></svg>"
           .getBytes(StandardCharsets.UTF_8);
@@ -75,14 +75,16 @@ public class CssCompileService {
       Path cssInput = null;
       List<Path> cssFiles = new ArrayList<>();
       try {
-        List<FileEntry> files = request.files() == null ? List.of() : List.copyOf(request.files());
+        List<FileEntry> files =
+            request.files() == null ? List.of() : List.copyOf(request.files());
         for (FileEntry entry : files) {
           Path resolved = safeResolve(workDir, entry.path());
           Path parent = resolved.getParent();
           if (parent != null) {
             Files.createDirectories(parent);
           }
-          Files.writeString(resolved, entry.content(), StandardCharsets.UTF_8);
+          Files.writeString(
+              resolved, entry.content(), StandardCharsets.UTF_8);
           if (entry.path().equals(request.inputPath())) {
             cssInput = resolved;
           }
@@ -169,7 +171,8 @@ public class CssCompileService {
     return resolved;
   }
 
-  private void ensureCssResources(Path workRoot, Path cssFile, Path designerJar) throws IOException {
+  private void ensureCssResources(Path workRoot, Path cssFile, Path designerJar)
+      throws IOException {
     String css = Files.readString(cssFile, StandardCharsets.UTF_8);
     Matcher matcher = URL_PATTERN.matcher(css);
     while (matcher.find()) {
@@ -195,7 +198,8 @@ public class CssCompileService {
       if (cssParent == null) {
         cssParent = cssFile.getFileSystem().getPath("");
       }
-      Path resolved = safeResolve(workRoot, cssParent.resolve(cleaned).toString());
+      Path resolved =
+          safeResolve(workRoot, cssParent.resolve(cleaned).toString());
       if (Files.exists(resolved)) {
         continue;
       }
@@ -204,7 +208,11 @@ public class CssCompileService {
         Files.createDirectories(parent);
       }
       byte[] content = stubContentFor(cleaned, designerJar);
-      Files.write(resolved, content, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+      Files.write(
+          resolved,
+          content,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.TRUNCATE_EXISTING);
     }
   }
 

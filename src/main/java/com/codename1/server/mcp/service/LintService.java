@@ -85,9 +85,10 @@ public class LintService {
           new LintDiag(
               "CN1_EDT_RULE",
               "error",
-              "UI mutations must occur on the EDT. Wrap in Display.getInstance().callSerially(...).",
+              "UI mutations must run on the EDT; wrap in Display.getInstance().callSerially(...).",
               WHOLE_FILE));
-      fixes.add(new QuickFix("Wrap UI code in callSerially(...)", PatchUtil.wrapEdtPatch()));
+      fixes.add(
+          new QuickFix("Wrap UI code in callSerially(...)", PatchUtil.wrapEdtPatch()));
     }
 
     // 5) Raw threads & sleep (strict => error)

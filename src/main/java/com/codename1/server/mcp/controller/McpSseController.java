@@ -1,5 +1,10 @@
 package com.codename1.server.mcp.controller;
 
+import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,36 +14,70 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-
+/** Handles the SSE endpoint that announces MCP server readiness and capabilities. */
 @RestController
 @RequestMapping("/mcp")
 public class McpSseController {
-    private static final Logger LOG = LoggerFactory.getLogger(McpSseController.class);
-    private final ObjectMapper mapper = new ObjectMapper();
 
-    @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter connect() {
-        SseEmitter emitter = new SseEmitter(0L); // never timeout
-        // send a greeting / capabilities event
-        try {
-            LOG.info("New SSE client connected to /mcp endpoint");
-            emitter.send(SseEmitter.event()
-                    .name("message")
-                    .data(mapper.writeValueAsString(Map.of(
-                            "jsonrpc","2.0",
-                            "method","server/ready",
-                            "params", Map.of("tools", List.of(
-                                    Map.of("name","cn1_lint_code","description","Lint Java for Codename One","input_schema",Map.of("type","object","properties",Map.of("code",Map.of("type","string")))),
-                                    Map.of("name","cn1_compile_check","description","Verify code compiles in Codename One","input_schema",Map.of("type","object","properties",Map.of("files",Map.of("type","array"))))
-                            ))
-                    ))));
-        } catch (IOException e) {
-            LOG.error("Failed to initialize SSE connection", e);
-            emitter.completeWithError(e);
-        }
-        return emitter;
+  private static final Logger LOG = LoggerFactory.getLogger(McpSseController.class);
+  private static final Map<String, Object> READY_PARAMS =
+      Map.of("tools", List.of(lintToolDescriptor(), compileToolDescriptor()));
+
+  private final ObjectMapper mapper = new ObjectMapper();
+
+  /** Establishes the SSE connection used by MCP clients to receive readiness updates. */
+  @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+  public SseEmitter connect() {
+    SseEmitter emitter = new SseEmitter(0L);
+    try {
+      LOG.info("New SSE client connected to /mcp endpoint");
+      Map<String, Object> event =
+          Map.of("jsonrpc", "2.0", "method", "server/ready", "params", READY_PARAMS);
+      emitter.send(
+          SseEmitter.event()
+              .name("message")
+              .data(mapper.writeValueAsString(event)));
+    } catch (IOException e) {
+      LOG.error("Failed to initialize SSE connection", e);
+      emitter.completeWithError(e);
     }
+    return emitter;
+  }
+
+  private static Map<String, Object> lintToolDescriptor() {
+    Map<String, Object> descriptor = new java.util.LinkedHashMap<>();
+    descriptor.put("name", "cn1_lint_code");
+    descriptor.put("description", "Lint Java for Codename One");
+    descriptor.put(
+        "input_schema",
+        Map.of(
+            "type",
+            "object",
+            "properties",
+            Map.of("code", Map.of("type", "string"))));
+    return Map.copyOf(descriptor);
+  }
+
+  private static Map<String, Object> compileToolDescriptor() {
+    Map<String, Object> fileSchema =
+        Map.of(
+            "type",
+            "object",
+            "properties",
+            Map.of(
+                "path", Map.of("type", "string"),
+                "content", Map.of("type", "string")));
+    Map<String, Object> descriptor = new java.util.LinkedHashMap<>();
+    descriptor.put("name", "cn1_compile_check");
+    descriptor.put("description", "Verify code compiles in Codename One");
+    descriptor.put(
+        "input_schema",
+        Map.of(
+            "type",
+            "object",
+            "properties",
+            Map.of(
+                "files", Map.of("type", "array", "items", fileSchema))));
+    return Map.copyOf(descriptor);
+  }
 }

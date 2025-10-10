@@ -24,92 +24,132 @@ import com.codename1.server.mcp.service.NativeStubService;
 import com.codename1.server.mcp.service.ScaffoldService;
 import com.codename1.server.mcp.service.SnippetService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
+/** HTTP facade exposing the Codename One tooling set as MCP-style endpoints. */
 @RestController
 @RequestMapping("/tools")
 public class ToolsController {
-    private static final Logger LOG = LoggerFactory.getLogger(ToolsController.class);
-    private final LintService lint;
-    private final ExternalCompileService compile;
-    private final CssCompileService cssCompile;
-    private final ScaffoldService scaffold;
-    private final SnippetService snippets;
-    private final NativeStubService nativeStubs;
 
-    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "Spring injects singleton services; controller keeps shared references intentionally.")
-    public ToolsController(LintService l, ExternalCompileService c, CssCompileService css, ScaffoldService s, SnippetService sn, NativeStubService ns) {
-        this.lint = l;
-        this.compile = c;
-        this.cssCompile = css;
-        this.scaffold = s;
-        this.snippets = sn;
-        this.nativeStubs = ns;
-    }
+  private static final Logger LOG = LoggerFactory.getLogger(ToolsController.class);
 
-    @PostMapping(value="/cn1_lint_code", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public LintResponse lint(@RequestBody LintRequest req) {
-        LOG.info("HTTP lint request received: language={} rulesetSize={}", req.language(), req.ruleset() == null ? 0 : req.ruleset().size());
-        return lint.lint(req);
-    }
+  private final LintService lintService;
+  private final ExternalCompileService compileService;
+  private final CssCompileService cssCompileService;
+  private final ScaffoldService scaffoldService;
+  private final SnippetService snippetService;
+  private final NativeStubService nativeStubService;
 
-    @PostMapping(value="/cn1_compile_check", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public CompileResponse compile(@RequestBody CompileRequest req) {
-        LOG.info("HTTP compile request received with {} files", req.files().size());
-        return compile.compile(req);
-    }
+  @SuppressFBWarnings(
+      value = "EI_EXPOSE_REP2",
+      justification = "Spring injects singleton services; controller keeps shared references.")
+  public ToolsController(
+      LintService lintService,
+      ExternalCompileService compileService,
+      CssCompileService cssCompileService,
+      ScaffoldService scaffoldService,
+      SnippetService snippetService,
+      NativeStubService nativeStubService) {
+    this.lintService = lintService;
+    this.compileService = compileService;
+    this.cssCompileService = cssCompileService;
+    this.scaffoldService = scaffoldService;
+    this.snippetService = snippetService;
+    this.nativeStubService = nativeStubService;
+  }
 
-    @PostMapping(value="/cn1_compile_css", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public CssCompileResponse compileCss(@RequestBody CssCompileRequest req) {
-        int fileCount = req.files() != null ? req.files().size() : 0;
-        LOG.info("HTTP CSS compile request received with {} files (input={})", fileCount, req.inputPath());
-        return cssCompile.compile(req);
-    }
+  /** Runs the Codename One linting rules against the provided request payload. */
+  @PostMapping(value = "/cn1_lint_code", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public LintResponse lint(@RequestBody LintRequest request) {
+    int rulesetSize = request.ruleset() == null ? 0 : request.ruleset().size();
+    LOG.info(
+        "HTTP lint request received: language={} rulesetSize={}",
+        request.language(),
+        rulesetSize);
+    return lintService.lint(request);
+  }
 
-    @PostMapping(value="/cn1_scaffold_project", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public ScaffoldResponse scaffold(@RequestBody ScaffoldRequest req) {
-        LOG.info("HTTP scaffold request received: package={} name={}", req.pkg(), req.name());
-        return scaffold.scaffold(req);
-    }
+  /** Compiles Java sources using the Codename One toolchain. */
+  @PostMapping(value = "/cn1_compile_check", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public CompileResponse compile(@RequestBody CompileRequest request) {
+    int fileCount = request.files() == null ? 0 : request.files().size();
+    LOG.info("HTTP compile request received with {} files", fileCount);
+    return compileService.compile(request);
+  }
 
-    @PostMapping(value="/cn1_explain_violation", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public ExplainResponse explain(@RequestBody ExplainRequest req) {
-        LOG.info("HTTP explain request received for rule {}", req.ruleId());
-        return snippets.explain(req.ruleId());
-    }
+  /** Compiles Codename One CSS into a theme resource. */
+  @PostMapping(value = "/cn1_compile_css", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public CssCompileResponse compileCss(@RequestBody CssCompileRequest request) {
+    int fileCount = request.files() == null ? 0 : request.files().size();
+    LOG.info(
+        "HTTP CSS compile request received with {} files (input={})",
+        fileCount,
+        request.inputPath());
+    return cssCompileService.compile(request);
+  }
 
-    @PostMapping(value="/cn1_search_snippets", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public SnippetsResponse snippets(@RequestBody SnippetsRequest req) {
-        LOG.info("HTTP snippets search for topic {}", req.topic());
-        return snippets.get(req.topic());
-    }
+  /** Generates a Codename One project scaffold. */
+  @PostMapping(value = "/cn1_scaffold_project", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ScaffoldResponse scaffold(@RequestBody ScaffoldRequest request) {
+    LOG.info(
+        "HTTP scaffold request received: package={} name={}", request.pkg(), request.name());
+    return scaffoldService.scaffold(request);
+  }
 
-    // Auto-fix can be naive: rewrap UI mutations; expand as needed
-    @PostMapping(value="/cn1_auto_fix", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public AutoFixResponse autoFix(@RequestBody AutoFixRequest req) {
-        String source = req.code();
-        if (source == null) {
-            // SpotBugs: HTTP clients may omit the code payload; use an empty string instead of risking NPEs.
-            source = "";
-        }
-        String patched = source.replace("form.show();",
-                "com.codename1.ui.Display.getInstance().callSerially(() -> { form.show(); });");
-        LOG.info("HTTP auto-fix request received ({} chars)", source.length());
-        var patch = new Patch("Wrap show() in EDT", """
-      @@
-      - form.show();
-      + com.codename1.ui.Display.getInstance().callSerially(() -> { form.show(); });
-      """);
-        return new AutoFixResponse(patched, java.util.List.of(patch));
-    }
+  /** Provides human-readable explanations for lint violations. */
+  @PostMapping(value = "/cn1_explain_violation", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ExplainResponse explain(@RequestBody ExplainRequest request) {
+    LOG.info("HTTP explain request received for rule {}", request.ruleId());
+    return snippetService.explain(request.ruleId());
+  }
 
-    @PostMapping(value="/cn1_generate_native_stubs", consumes=MediaType.APPLICATION_JSON_VALUE)
-    public NativeStubResponse generateNativeStubs(@RequestBody NativeStubRequest req) {
-        int fileCount = req.files() != null ? req.files().size() : 0;
-        LOG.info("HTTP native stub generation request received for interface {} ({} source files)", req.interfaceName(), fileCount);
-        return nativeStubs.generate(req);
+  /** Looks up tutorial snippets for the requested topic. */
+  @PostMapping(value = "/cn1_search_snippets", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public SnippetsResponse searchSnippets(@RequestBody SnippetsRequest request) {
+    LOG.info("HTTP snippets search for topic {}", request.topic());
+    return snippetService.get(request.topic());
+  }
+
+  /** Applies simple automatic fixes to known lint issues. */
+  @PostMapping(value = "/cn1_auto_fix", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public AutoFixResponse autoFix(@RequestBody AutoFixRequest request) {
+    String source = request.code();
+    if (source == null) {
+      // SpotBugs: HTTP clients may omit the code payload; use an empty string instead of risking
+      // NPEs.
+      source = "";
     }
+    String patched =
+        source.replace(
+            "form.show();",
+            "com.codename1.ui.Display.getInstance().callSerially(() -> { form.show(); });");
+    LOG.info("HTTP auto-fix request received ({} chars)", source.length());
+    String diff =
+        String.join(
+            "\n",
+            "  @@",
+            "  - form.show();",
+            "  + com.codename1.ui.Display.getInstance().callSerially(() -> { form.show(); });",
+            "  ");
+    Patch patch = new Patch("Wrap show() in EDT", diff);
+    return new AutoFixResponse(patched, List.of(patch));
+  }
+
+  /** Generates native interface stubs for Codename One projects. */
+  @PostMapping(value = "/cn1_generate_native_stubs", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public NativeStubResponse generateNativeStubs(@RequestBody NativeStubRequest request) {
+    int fileCount = request.files() == null ? 0 : request.files().size();
+    LOG.info(
+        "HTTP native stub generation request received for interface {} ({} source files)",
+        request.interfaceName(),
+        fileCount);
+    return nativeStubService.generate(request);
+  }
 }
