@@ -168,7 +168,7 @@ public class GlobalExtractor {
                     try (OutputStream os = Files.newOutputStream(out)) {
                         tar.transferTo(os);
                     }
-                    if ((e.getMode() & 0100) != 0) out.toFile().setExecutable(true);
+                    if ((e.getMode() & 0x40) != 0) out.toFile().setExecutable(true);
                 }
             }
         }
@@ -211,12 +211,12 @@ public class GlobalExtractor {
             if (ZIP_GET_UNIX_MODE != null) {
                 int unixMode = (int) ZIP_GET_UNIX_MODE.invoke(entry);
                 if (unixMode != -1) {
-                    return (unixMode & 0100) != 0;
+                    return (unixMode & 0x40) != 0;
                 }
             }
             if (ZIP_GET_EXTERNAL_ATTRIBUTES != null) {
                 long attrs = (long) ZIP_GET_EXTERNAL_ATTRIBUTES.invoke(entry);
-                return ((attrs >> 16) & 0100) != 0;
+                return ((attrs >> 16) & 0x40) != 0;
             }
         } catch (ReflectiveOperationException e) {
             LOG.debug("Failed to inspect permissions for zip entry {}", entry.getName(), e);
