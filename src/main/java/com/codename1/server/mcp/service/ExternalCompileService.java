@@ -5,19 +5,26 @@ import com.codename1.server.mcp.dto.CompileResponse;
 import com.codename1.server.mcp.dto.FileEntry;
 import com.codename1.server.mcp.tools.GlobalExtractor;
 import com.codename1.server.mcp.tools.Jdk8ManagerFromResource;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.util.*;
-
+/**
+ * Compiles Java code by invoking the bundled JDK 8 compiler.
+ */
 @Service
 public class ExternalCompileService {
+
     private static final Logger LOG = LoggerFactory.getLogger(ExternalCompileService.class);
+
     private final GlobalExtractor extractor;
     private final Jdk8ManagerFromResource jdk8;
 
@@ -26,30 +33,34 @@ public class ExternalCompileService {
         this.jdk8 = jdk8;
     }
 
+    /**
+     * Runs javac against the provided source files.
+     *
+     * @param req compile request describing the files to compile
+     * @return the response containing compiler output and status
+     */
     public CompileResponse compile(CompileRequest req) {
         try {
             List<FileEntry> files = req.files() == null ? List.of() : List.copyOf(req.files());
             LOG.info("Starting compile request with {} files", files.size());
-            // Extract libs once
-            Path cn1   = extractor.ensureFile("/cn1libs/CodenameOne.jar");
-            Path boot  = extractor.ensureFile("/cn1libs/CLDC11.jar");
 
-            // Use bundled JDK 8
+            Path cn1 = extractor.ensureFile("/cn1libs/CodenameOne.jar");
+            Path boot = extractor.ensureFile("/cn1libs/CLDC11.jar");
+
             Path javac = jdk8.ensureJavac8();
             LOG.debug("Resolved javac path: {}", javac);
 
-            // Write sources
             Path work = Files.createTempDirectory("cn1c-");
             List<Path> sources = new ArrayList<>();
-            for (var f : files) {
-                Path p = work.resolve(f.path());
-                Path parent = p.getParent();
+            for (FileEntry f : files) {
+                Path path = work.resolve(f.path());
+                Path parent = path.getParent();
                 if (parent != null) {
                     Files.createDirectories(parent);
                 }
                 // SpotBugs: guard against files placed at the workspace root which have no parent directory.
-                Files.writeString(p, f.content(), StandardCharsets.UTF_8);
-                sources.add(p);
+                Files.writeString(path, f.content(), StandardCharsets.UTF_8);
+                sources.add(path);
             }
 
             List<String> cmd = new ArrayList<>(List.of(
@@ -62,7 +73,7 @@ public class ExternalCompileService {
             if (Files.exists(boot)) {
                 cmd.addAll(List.of("-bootclasspath", boot.toString()));
             }
-            sources.forEach(s -> cmd.add(s.toString()));
+            sources.forEach(source -> cmd.add(source.toString()));
             LOG.debug("Compile command: {}", cmd);
 
             ProcessBuilder pb = new ProcessBuilder(cmd);

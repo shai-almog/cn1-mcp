@@ -9,6 +9,13 @@ import java.util.List;
  * be processed.
  */
 public record NativeStubRequest(List<FileEntry> files, String interfaceName) {
+
+    /**
+     * Creates a new request while defensively copying the provided source files.
+     *
+     * @param files         Java source files that comprise the compilation unit
+     * @param interfaceName the fully qualified interface name to process
+     */
     public NativeStubRequest {
         // SpotBugs: retain an immutable snapshot of provided source files.
         files = files == null ? null : List.copyOf(files);
