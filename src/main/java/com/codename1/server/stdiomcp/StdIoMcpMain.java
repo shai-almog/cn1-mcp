@@ -461,14 +461,12 @@ public final class StdIoMcpMain {
   private static void handleModesList(RpcReq req, BufferedWriter out, ModeState mode)
       throws IOException {
     LOG.info("Listing modes for request id={}", req.id());
-    List<Map<String, Object>> modes = new ArrayList<>();
     Map<String, Object> defaultDescriptor = new LinkedHashMap<>();
     defaultDescriptor.put("name", DEFAULT_MODE);
     defaultDescriptor.put("description", "Default Codename One tooling");
     defaultDescriptor.put(
         "instructions", "Use lint/compile tools for general development.");
     defaultDescriptor.put("isDefault", Boolean.TRUE);
-    modes.add(defaultDescriptor);
 
     Map<String, Object> guideDescriptor = new LinkedHashMap<>();
     guideDescriptor.put("name", GUIDE_MODE);
@@ -476,6 +474,9 @@ public final class StdIoMcpMain {
     guideDescriptor.put(
         "instructions", "Call resources/list and resources/read to view Markdown guides.");
     guideDescriptor.put("isDefault", Boolean.FALSE);
+
+    List<Map<String, Object>> modes = new ArrayList<>();
+    modes.add(defaultDescriptor);
     modes.add(guideDescriptor);
 
     Map<String, Object> result = new LinkedHashMap<>();

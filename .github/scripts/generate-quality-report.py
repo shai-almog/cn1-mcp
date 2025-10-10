@@ -383,7 +383,7 @@ def parse_checkstyle() -> Optional[AnalysisReport]:
             )
     findings = [finding for finding in findings if finding.message]
     if not findings:
-        return None
+        return AnalysisReport(totals=severities, findings=[])
     severity_order = {"Error": 0, "Warning": 1, "Info": 2}
     findings.sort(key=lambda item: severity_order.get(item.severity, 99))
     return AnalysisReport(totals=severities, findings=findings)

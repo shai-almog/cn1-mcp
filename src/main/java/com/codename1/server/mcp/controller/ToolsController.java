@@ -47,6 +47,9 @@ public class ToolsController {
   private final SnippetService snippetService;
   private final NativeStubService nativeStubService;
 
+  /**
+   * Creates a controller facade backed by the Codename One tooling services injected by Spring.
+   */
   @SuppressFBWarnings(
       value = "EI_EXPOSE_REP2",
       justification = "Spring injects singleton services; controller keeps shared references.")
