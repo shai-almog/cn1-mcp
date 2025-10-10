@@ -63,6 +63,7 @@ class Jdk8ManagerFromResourceTest {
 
   @Test
   void ensureBinaryValidatesResourcePath() {
+    System.setProperty("os.name", "Linux");
     Jdk8ManagerFromResource manager =
         new Jdk8ManagerFromResource(extractor, "", "release");
 
