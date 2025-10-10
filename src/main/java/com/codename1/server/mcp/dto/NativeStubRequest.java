@@ -9,8 +9,11 @@ import java.util.List;
  * be processed.
  */
 public record NativeStubRequest(List<FileEntry> files, String interfaceName) {
-    public NativeStubRequest {
-        // SpotBugs: retain an immutable snapshot of provided source files.
-        files = files == null ? null : List.copyOf(files);
-    }
+  /**
+   * Copies the supplied source files to keep the request immutable after submission.
+   */
+  public NativeStubRequest {
+    // SpotBugs: retain an immutable snapshot of provided source files.
+    files = files == null ? null : List.copyOf(files);
+  }
 }
