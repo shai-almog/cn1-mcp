@@ -43,7 +43,11 @@ public class ExternalCompileService {
             List<Path> sources = new ArrayList<>();
             for (var f : files) {
                 Path p = work.resolve(f.path());
-                Files.createDirectories(p.getParent());
+                Path parent = p.getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
+                // SpotBugs: guard against files placed at the workspace root which have no parent directory.
                 Files.writeString(p, f.content(), StandardCharsets.UTF_8);
                 sources.add(p);
             }

@@ -66,7 +66,12 @@ public class Jdk8ManagerFromResource {
         if (resource == null || resource.isBlank()) {
             throw new IOException("No bundled JDK8 resource configured for Linux");
         }
-        String fileName = Path.of(resource).getFileName().toString();
+        Path fileNamePath = Path.of(resource).getFileName();
+        if (fileNamePath == null) {
+            // SpotBugs: ensure we throw a friendly error instead of dereferencing a null file name.
+            throw new IOException("Bundled JDK8 resource path must include a file name: " + resource);
+        }
+        String fileName = fileNamePath.toString();
         String folderName = stripArchiveExtension(fileName);
         GlobalExtractor.ArchiveType type = GlobalExtractor.ArchiveType.fromName(fileName);
         LOG.info("Ensuring Linux JDK8 resource {} -> folder {}", resource, folderName);

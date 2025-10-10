@@ -48,15 +48,15 @@ public class ScaffoldService {
     }
 
     private String appJava(String pkg, String name) {
-        return """
+        String template = """
             package %s;
             import com.codename1.ui.*;
             import com.codename1.ui.layouts.BorderLayout;
-        
+
             public class MyApplication {
               private Form current;
               public void init(Object context) { }
-        
+
               public void start() {
                 if(current != null) { current.show(); return; }
                 Form f = new Form("%s", new BorderLayout());
@@ -65,11 +65,13 @@ public class ScaffoldService {
                 f.add(BorderLayout.CENTER, btn);
                 f.show();
               }
-        
+
               public void stop() { current = Display.getInstance().getCurrent(); }
               public void destroy() { }
             }
-            """.formatted(pkg, name);
+            """;
+        // SpotBugs: use %n in formatted strings to honour platform-specific line endings.
+        return String.format(template.replace("\n", "%n"), pkg, name);
     }
 
     private String themeCss() {

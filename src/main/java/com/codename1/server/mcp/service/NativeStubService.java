@@ -63,7 +63,11 @@ public class NativeStubService {
                     throw new IllegalArgumentException("File path is required");
                 }
                 Path dest = resolveRelativePath(sourceDir, entry.path());
-                Files.createDirectories(dest.getParent());
+                Path parent = dest.getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
+                // SpotBugs: top-level files resolve without parents; no directories are required in that case.
                 Files.writeString(dest, entry.content(), StandardCharsets.UTF_8);
                 provided.put(entry.path(), entry);
             }
@@ -129,7 +133,11 @@ public class NativeStubService {
             return;
         }
         Path dest = resolveRelativePath(sourceDir, relativePath);
-        Files.createDirectories(dest.getParent());
+        Path parent = dest.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        // SpotBugs: bundled stubs might live at the workspace root; those require no parent directories.
         Files.writeString(dest, content, StandardCharsets.UTF_8);
     }
 
