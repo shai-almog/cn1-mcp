@@ -9,10 +9,15 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +32,22 @@ jobs:
         env:
           SPRING_PROFILES_ACTIVE: stdio
         run: ./mvnw -B -ntp verify
+
+      - name: SonarQube scan
+        if: github.event_name == 'pull_request' && env.SONAR_HOST_URL != '' && env.SONAR_TOKEN != '' && env.SONAR_PROJECT_KEY != ''
+        uses: SonarSource/sonarqube-scan-action@v2
+        env:
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.projectName=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=src
+            -Dsonar.java.binaries=target/classes
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+            -Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
+            -Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}
 
       - name: Prepare cross-platform jar
         run: |
@@ -159,6 +180,99 @@ jobs:
         with:
           name: ${{ matrix.artifact-name }}
           path: native-dist/${{ matrix.artifact-file-name }}
+
+  pr-review-report:
+    if: github.event_name == 'pull_request'
+    needs:
+      - build
+      - native-images
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      actions: read
+      contents: read
+    steps:
+      - name: Collect artifact metadata
+        id: artifact-metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: context.runId,
+                per_page: 100,
+              }
+            );
+            const artifactLinks = artifacts.map((artifact) => ({
+              name: artifact.name,
+              url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/artifacts/${artifact.id}`,
+            }));
+            core.setOutput('artifacts', JSON.stringify(artifactLinks));
+
+      - name: Upsert PR build summary comment
+        uses: actions/github-script@v7
+        env:
+          ARTIFACTS: ${{ steps.artifact-metadata.outputs.artifacts }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+        with:
+          script: |
+            const prNumber = context.payload.pull_request?.number;
+            if (!prNumber) {
+              core.info('No pull request number available. Skipping comment creation.');
+              return;
+            }
+
+            const marker = '<!-- pr-build-summary -->';
+            const artifacts = JSON.parse(process.env.ARTIFACTS || '[]');
+            const sonarHost = (process.env.SONAR_HOST_URL || '').replace(/\/$/, '');
+            const sonarProjectKey = process.env.SONAR_PROJECT_KEY;
+            const sonarUrl = sonarHost && sonarProjectKey
+              ? `${sonarHost}/dashboard?id=${encodeURIComponent(sonarProjectKey)}&pullRequest=${prNumber}`
+              : null;
+
+            const pr = context.payload.pull_request;
+            const artifactLines = artifacts.length
+              ? artifacts.map((artifact) => `- [${artifact.name}](${artifact.url})`).join('\n')
+              : '_No artifacts were published in this run._';
+
+            const body = `${marker}\n` +
+              `### PR Build Summary\n` +
+              `- **Title:** ${pr.title}\n` +
+              `- **Author:** @${pr.user.login}\n` +
+              `- **Head:** ${pr.head.label}\n` +
+              `- **Commit:** ${pr.head.sha}\n` +
+              (sonarUrl ? `- **SonarQube:** [View analysis](${sonarUrl})\n` : '') +
+              `\n### Downloadable Artifacts\n` +
+              `${artifactLines}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+
+            const existing = comments.find((comment) => comment.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
 
   publish-release:
     if: github.event_name == 'release'
