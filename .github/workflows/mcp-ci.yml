@@ -30,7 +30,36 @@ jobs:
           SPRING_PROFILES_ACTIVE: stdio
         run: ./mvnw -B -ntp verify
 
+      - name: Collect static analysis outputs
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p quality-artifacts/static-analysis
+          shopt -s nullglob
+          for path in target/spotbugs*.xml target/pmd.xml target/checkstyle-result.xml; do
+            if [ -f "$path" ]; then
+              cp "$path" quality-artifacts/static-analysis/
+            fi
+          done
+          if [ -d target/site ]; then
+            mkdir -p quality-artifacts/static-analysis/site
+            cp -R target/site/. quality-artifacts/static-analysis/site/
+          fi
+          if [ "$(find quality-artifacts/static-analysis -type f | wc -l)" -eq 0 ]; then
+            echo "No static analysis outputs were generated." > quality-artifacts/static-analysis/README.txt
+          fi
+
+      - name: Upload static analysis reports
+        if: always()
+        id: upload-static-analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-reports
+          path: quality-artifacts/static-analysis
+
       - name: Generate quality report
+        env:
+          STATIC_ANALYSIS_ARTIFACT_URL: ${{ steps.upload-static-analysis.outputs.artifact-url }}
         run: python3 .github/scripts/generate-quality-report.py
 
       - name: Upload quality report artifact
