@@ -29,6 +29,11 @@ public class GuideService {
   private final List<GuideDoc> guides;
   private final Map<String, GuideDoc> guidesById;
 
+  /**
+   * Creates a guide service that loads markdown documents from the classpath.
+   *
+   * @param resolver resource resolver used to discover guide markdown files
+   */
   @SuppressFBWarnings(
       value = "CT_CONSTRUCTOR_THROW",
       justification = "Fail fast when bundled guides cannot be enumerated")
@@ -64,6 +69,7 @@ public class GuideService {
     LOG.info("Discovered {} bundled guide(s)", this.guides.size());
   }
 
+  /** Returns an immutable snapshot of the bundled guides. */
   @SuppressFBWarnings(
       value = "EI_EXPOSE_REP",
       justification = "Guides list is created as an unmodifiable snapshot")
@@ -71,10 +77,23 @@ public class GuideService {
     return guides;
   }
 
+  /**
+   * Looks up a guide by its identifier.
+   *
+   * @param id the slug of the desired guide
+   * @return the guide metadata when present
+   */
   public Optional<GuideDoc> findGuide(String id) {
     return Optional.ofNullable(guidesById.get(id));
   }
 
+  /**
+   * Loads the markdown content for the provided guide identifier.
+   *
+   * @param id the slug of the guide to load
+   * @return the raw markdown content
+   * @throws IOException when the guide resource cannot be read
+   */
   public String loadGuide(String id) throws IOException {
     GuideDoc guide = guidesById.get(id);
     if (guide == null) {
@@ -104,5 +123,6 @@ public class GuideService {
     return dot >= 0 ? filename.substring(0, dot) : filename;
   }
 
+  /** Immutable metadata describing a bundled guide. */
   public record GuideDoc(String id, String title, String description, Resource resource) {}
 }

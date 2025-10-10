@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,35 +21,61 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Service;
 
+/** Provides read-only access to the snippet markdown files bundled with the MCP server. */
 @Service
 public class SnippetService {
   private static final Logger LOG = LoggerFactory.getLogger(SnippetService.class);
   private final Map<String, List<Snippet>> db;
 
+  /**
+   * Creates a snippet service backed by markdown files discovered on the classpath.
+   *
+   * @param resolver resource resolver used to enumerate bundled snippets
+   */
   public SnippetService(ResourcePatternResolver resolver) {
     this.db = loadSnippets(resolver);
     LOG.info("Loaded {} snippet topics from classpath", db.size());
   }
 
+  /**
+   * Returns all snippets for the provided topic, or an empty list when none are available.
+   *
+   * @param topic the snippet topic to fetch
+   * @return the collection of snippets for the topic
+   */
   public SnippetsResponse get(String topic) {
     var snippets = db.getOrDefault(normalize(topic), List.of());
     LOG.info("Fetching snippets for topic {} -> {} matches", topic, snippets.size());
     return new SnippetsResponse(snippets);
   }
 
+  /**
+   * Provides a short explanation of well-known rule identifiers surfaced by lint tooling.
+   *
+   * @param ruleId the rule identifier to explain
+   * @return the explanation response
+   */
   public ExplainResponse explain(String ruleId) {
-    var response =
-        switch (ruleId) {
-          case "CN1_EDT_RULE" -> new ExplainResponse(
-              "UI changes must run on the Event Dispatch Thread (EDT).",
-              "form.show(); // anywhere",
-              "Display.getInstance().callSerially(() -> form.show());");
-          case "CN1_FORBIDDEN_IMPORT" -> new ExplainResponse(
-              "AWT/Swing/JavaFX are not supported on CN1.",
-              "import javax.swing.JButton; new JButton();",
-              "import com.codename1.ui.Button; new Button();");
-          default -> new ExplainResponse("No summary for " + ruleId, "", "");
-        };
+    ExplainResponse response;
+    switch (ruleId) {
+      case "CN1_EDT_RULE":
+        response =
+            new ExplainResponse(
+                "UI changes must run on the Event Dispatch Thread (EDT).",
+                "form.show(); // anywhere",
+                "Display.getInstance().callSerially(() -> form.show());");
+        break;
+      case "CN1_FORBIDDEN_IMPORT":
+        response =
+            new ExplainResponse(
+                "AWT/Swing/JavaFX are not supported on CN1.",
+                "import javax.swing.JButton; new JButton();",
+                "import com.codename1.ui.Button; new Button();");
+        break;
+      default:
+        response = new ExplainResponse("No summary for " + ruleId, "", "");
+        break;
+    }
     LOG.info("Explain lookup for rule {} -> summaryLength={}", ruleId, response.summary().length());
     return response;
   }
@@ -63,13 +90,13 @@ public class SnippetService {
             try {
               return a.getURL().toString().compareTo(b.getURL().toString());
             } catch (IOException e) {
-              String aName = a.getFilename();
-              String bName = b.getFilename();
-              if (aName == null || bName == null) {
+              String firstName = a.getFilename();
+              String secondName = b.getFilename();
+              if (firstName == null || secondName == null) {
                 // SpotBugs: fall back to stable ordering even when filenames are missing.
                 return Integer.compare(System.identityHashCode(a), System.identityHashCode(b));
               }
-              return aName.compareTo(bName);
+              return firstName.compareTo(secondName);
             }
           });
 
@@ -78,7 +105,7 @@ public class SnippetService {
             .ifPresent(
                 entry -> {
                   var topicKey = normalize(entry.topic);
-                  map.computeIfAbsent(topicKey, k -> new ArrayList<>()).add(entry.snippet);
+                  map.computeIfAbsent(topicKey, key -> new ArrayList<>()).add(entry.snippet);
                 });
       }
     } catch (IOException e) {
@@ -89,7 +116,7 @@ public class SnippetService {
 
   private record SnippetEntry(String topic, Snippet snippet) {}
 
-  private java.util.Optional<SnippetEntry> parseResource(Resource resource) {
+  private Optional<SnippetEntry> parseResource(Resource resource) {
     try (var reader =
         new BufferedReader(
             new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
@@ -98,12 +125,12 @@ public class SnippetService {
       var normalized = raw.replace("\r\n", "\n").trim();
       if (!normalized.startsWith("---\n")) {
         LOG.warn("Snippet {} is missing front matter", resource.getFilename());
-        return java.util.Optional.empty();
+        return Optional.empty();
       }
       int end = normalized.indexOf("\n---\n");
       if (end < 0) {
         LOG.warn("Snippet {} front matter is not terminated", resource.getFilename());
-        return java.util.Optional.empty();
+        return Optional.empty();
       }
       String frontMatter = normalized.substring(4, end);
       String body = normalized.substring(end + 5).trim();
@@ -115,12 +142,12 @@ public class SnippetService {
         LOG.warn(
             "Snippet {} missing required metadata (topic/title/description)",
             resource.getFilename());
-        return java.util.Optional.empty();
+        return Optional.empty();
       }
-      return java.util.Optional.of(new SnippetEntry(topic, new Snippet(title, description, body)));
+      return Optional.of(new SnippetEntry(topic, new Snippet(title, description, body)));
     } catch (IOException e) {
       LOG.warn("Failed to parse snippet {}", resource.getFilename(), e);
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
   }
 

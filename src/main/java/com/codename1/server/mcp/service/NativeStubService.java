@@ -28,10 +28,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+/** Compiles user-provided Java sources and generates Codename One native interface stubs. */
 @Service
 public class NativeStubService {
   private static final Logger LOG = LoggerFactory.getLogger(NativeStubService.class);
 
+  /**
+   * Generates native stubs for the given request.
+   *
+   * @param request the compilation request describing the interface and supporting files
+   * @return the generated native stub files
+   */
   public NativeStubResponse generate(NativeStubRequest request) {
     Objects.requireNonNull(request, "request");
     if (request.interfaceName() == null || request.interfaceName().isBlank()) {
@@ -76,15 +83,24 @@ public class NativeStubService {
           sourceDir,
           provided,
           "com/codename1/system/NativeInterface.java",
-          "package com.codename1.system;\n\n"
-              + "public interface NativeInterface {\n"
-              + "    boolean isSupported();\n"
-              + "}\n");
+          """
+                            package com.codename1.system;
+
+                            public interface NativeInterface {
+                              boolean isSupported();
+                            }
+                            """
+              .replace("\n", System.lineSeparator()));
       ensureStub(
           sourceDir,
           provided,
           "com/codename1/ui/PeerComponent.java",
-          "package com.codename1.ui;\n\npublic class PeerComponent { }\n");
+          """
+                            package com.codename1.ui;
+
+                            public class PeerComponent {}
+                            """
+              .replace("\n", System.lineSeparator()));
 
       List<Path> sources = new ArrayList<>();
       try (var stream = Files.walk(sourceDir)) {

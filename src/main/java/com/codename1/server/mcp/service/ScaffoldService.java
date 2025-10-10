@@ -8,16 +8,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-/** Builds Codename One starter projects based on scaffold requests. */
+/** Generates a minimal Codename One application scaffold for quick-start projects. */
 @Service
 public class ScaffoldService {
   private static final Logger LOG = LoggerFactory.getLogger(ScaffoldService.class);
 
   /**
-   * Generates a scaffold project for the provided request.
+   * Produces the scaffold files for the provided package/name combination.
    *
-   * @param req scaffold options supplied by the caller
-   * @return a response containing files for the new project skeleton
+   * @param req scaffold request containing package and application name metadata
+   * @return generated scaffold response
    */
   public ScaffoldResponse scaffold(ScaffoldRequest req) {
     String pkg = req.pkg();
@@ -38,18 +38,18 @@ public class ScaffoldService {
     return response;
   }
 
-  /**
-   * Produces the Maven project descriptor used by the scaffold.
-   *
-   * @return the pom.xml content
-   */
   private String pom() {
     return """
             <!-- Minimal CN1 Maven skeleton; fill versions/plugins to match your setup -->
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <modelVersion>4.0.0</modelVersion>
-              <groupId>com.example</groupId><artifactId>cn1app</artifactId><version>1.0.0</version>
-              <properties><maven.compiler.source>11</maven.compiler.source><maven.compiler.target>8</maven.compiler.target></properties>
+              <groupId>com.example</groupId>
+              <artifactId>cn1app</artifactId>
+              <version>1.0.0</version>
+              <properties>
+                <maven.compiler.source>11</maven.compiler.source>
+                <maven.compiler.target>8</maven.compiler.target>
+              </properties>
               <dependencies>
                 <dependency>
                   <groupId>com.codenameone</groupId>
@@ -62,13 +62,6 @@ public class ScaffoldService {
             """;
   }
 
-  /**
-   * Generates the Java entry point class for the scaffolded project.
-   *
-   * @param pkg the Java package name
-   * @param name the application display name
-   * @return the Java source file contents
-   */
   private String appJava(String pkg, String name) {
     String template =
         """
@@ -80,16 +73,21 @@ public class ScaffoldService {
               private Form current;
               public void init(Object context) { }
 
-              public void start() {
-                if(current != null) { current.show(); return; }
-                Form f = new Form("%s", new BorderLayout());
-                Button btn = new Button("Hello CN1");
-                btn.setUIID("PrimaryButton");
-                f.add(BorderLayout.CENTER, btn);
-                f.show();
-              }
+                public void start() {
+                  if (current != null) {
+                    current.show();
+                    return;
+                  }
+                  Form f = new Form("%s", new BorderLayout());
+                  Button btn = new Button("Hello CN1");
+                  btn.setUIID("PrimaryButton");
+                  f.add(BorderLayout.CENTER, btn);
+                  f.show();
+                }
 
-              public void stop() { current = Display.getInstance().getCurrent(); }
+                public void stop() {
+                  current = Display.getInstance().getCurrent();
+                }
               public void destroy() { }
             }
             """;
@@ -97,11 +95,6 @@ public class ScaffoldService {
     return String.format(template.replace("\n", "%n"), pkg, name);
   }
 
-  /**
-   * Creates a sample CSS theme for the scaffolded application.
-   *
-   * @return the CSS file contents
-   */
   private String themeCss() {
     return """
             /* Codename One CSS: compiled to theme.res */
@@ -116,11 +109,6 @@ public class ScaffoldService {
             """;
   }
 
-  /**
-   * Provides the default Codename One settings configuration.
-   *
-   * @return the codenameone_settings.properties content
-   */
   private String settings() {
     return """
             codename1.android.keystore=none
