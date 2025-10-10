@@ -1,4 +1,4 @@
 package com.codename1.server.mcp.dto;
 
-public record CssCompileResponse(boolean ok, String log) {
-}
+/** Result of compiling Codename One CSS assets. */
+public record CssCompileResponse(boolean ok, String log) {}
