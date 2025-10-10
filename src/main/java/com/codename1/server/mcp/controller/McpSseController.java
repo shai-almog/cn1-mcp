@@ -1,11 +1,10 @@
 package com.codename1.server.mcp.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -45,7 +44,7 @@ public class McpSseController {
   }
 
   private static Map<String, Object> lintToolDescriptor() {
-    Map<String, Object> descriptor = new java.util.LinkedHashMap<>();
+    Map<String, Object> descriptor = new LinkedHashMap<>();
     descriptor.put("name", "cn1_lint_code");
     descriptor.put("description", "Lint Java for Codename One");
     descriptor.put(
@@ -67,7 +66,7 @@ public class McpSseController {
             Map.of(
                 "path", Map.of("type", "string"),
                 "content", Map.of("type", "string")));
-    Map<String, Object> descriptor = new java.util.LinkedHashMap<>();
+    Map<String, Object> descriptor = new LinkedHashMap<>();
     descriptor.put("name", "cn1_compile_check");
     descriptor.put("description", "Verify code compiles in Codename One");
     descriptor.put(

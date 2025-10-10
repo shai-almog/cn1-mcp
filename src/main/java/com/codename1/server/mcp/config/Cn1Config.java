@@ -8,6 +8,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/** Spring configuration for Codename One tooling dependencies and resources. */
 @Configuration
 @EnableConfigurationProperties(Cn1Config.Cn1Props.class)
 public class Cn1Config {
