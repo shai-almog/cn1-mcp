@@ -9,13 +9,13 @@ import java.util.List;
  */
 public record SnippetsResponse(List<Snippet> snippets) {
 
-    /**
-     * Creates a new response while defensively copying the snippet list.
-     *
-     * @param snippets the snippets returned for the request
-     */
-    public SnippetsResponse {
-        // SpotBugs: share an immutable view of snippet results.
-        snippets = snippets == null ? null : List.copyOf(snippets);
-    }
+  /**
+   * Creates a new response while defensively copying the snippet list.
+   *
+   * @param snippets the snippets returned for the request
+   */
+  public SnippetsResponse {
+    // SpotBugs: share an immutable view of snippet results.
+    snippets = snippets == null ? null : List.copyOf(snippets);
+  }
 }

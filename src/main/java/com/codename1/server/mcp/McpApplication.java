@@ -5,17 +5,20 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
+/** Entrypoint for the Codename One MCP Spring Boot application. */
 @SpringBootApplication
-/**
- * Entrypoint for the Codename One MCP Spring Boot application.
- */
 public class McpApplication {
 
-    private static final Logger LOG = LoggerFactory.getLogger(McpApplication.class);
+  private static final Logger LOG = LoggerFactory.getLogger(McpApplication.class);
 
-    public static void main(String[] args) {
-        LOG.info("Starting Codename One MCP application with {} arguments",
-                args == null ? 0 : args.length);
-        SpringApplication.run(McpApplication.class, args);
-    }
+  /**
+   * Bootstraps the Spring application context.
+   *
+   * @param args command-line arguments supplied by the JVM
+   */
+  public static void main(String[] args) {
+    LOG.info(
+        "Starting Codename One MCP application with {} arguments", args == null ? 0 : args.length);
+    SpringApplication.run(McpApplication.class, args);
+  }
 }

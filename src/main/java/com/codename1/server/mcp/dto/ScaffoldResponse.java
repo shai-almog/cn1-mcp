@@ -9,13 +9,13 @@ import java.util.List;
  */
 public record ScaffoldResponse(List<FileEntry> files) {
 
-    /**
-     * Creates a new response while defensively copying the file list.
-     *
-     * @param files generated files composing the scaffolded project
-     */
-    public ScaffoldResponse {
-        // SpotBugs: keep scaffold outputs immutable for API consumers.
-        files = files == null ? null : List.copyOf(files);
-    }
+  /**
+   * Creates a new response while defensively copying the file list.
+   *
+   * @param files generated files composing the scaffolded project
+   */
+  public ScaffoldResponse {
+    // SpotBugs: keep scaffold outputs immutable for API consumers.
+    files = files == null ? null : List.copyOf(files);
+  }
 }
