@@ -1,0 +1,513 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StdIoMcpMain.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mcp</a> &gt; <a href="index.source.html" class="el_package">com.codename1.server.stdiomcp</a> &gt; <span class="el_source">StdIoMcpMain.java</span></div><h1>StdIoMcpMain.java</h1><pre class="source lang-java linenums">package com.codename1.server.stdiomcp;
+
+import com.codename1.server.mcp.McpApplication;
+import com.codename1.server.mcp.dto.CompileRequest;
+import com.codename1.server.mcp.dto.CssCompileRequest;
+import com.codename1.server.mcp.dto.FileEntry;
+import com.codename1.server.mcp.dto.LintRequest;
+import com.codename1.server.mcp.dto.NativeStubRequest;
+import com.codename1.server.mcp.service.CssCompileService;
+import com.codename1.server.mcp.service.ExternalCompileService;
+import com.codename1.server.mcp.service.GuideService;
+import com.codename1.server.mcp.service.LintService;
+import com.codename1.server.mcp.service.NativeStubService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.context.ConfigurableApplicationContext;
+
+/** STDIO entry point that exposes the MCP interface on standard IO streams. */
+public final class StdIoMcpMain {
+
+<span class="fc" id="L37">  private static final Logger LOG = LoggerFactory.getLogger(StdIoMcpMain.class);</span>
+<span class="fc" id="L38">  private static final ObjectMapper MAPPER = new ObjectMapper();</span>
+  private static final String DEFAULT_MODE = &quot;default&quot;;
+  private static final String GUIDE_MODE = &quot;cn1_guide&quot;;
+<span class="fc" id="L41">  private static final List&lt;Map&lt;String, Object&gt;&gt; TOOL_DESCRIPTORS = createToolDescriptors();</span>
+
+  private StdIoMcpMain() {}
+
+<span class="fc" id="L45">  record RpcReq(String jsonrpc, Object id, String method, Map&lt;String, Object&gt; params) {}</span>
+
+<span class="fc" id="L47">  record RpcRes(String jsonrpc, Object id, Object result) {}</span>
+
+<span class="fc" id="L49">  record RpcErr(String jsonrpc, Object id, Map&lt;String, Object&gt; error) {}</span>
+
+  public static void main(String[] args) throws Exception {
+<span class="nc" id="L52">    runWithStreams(System.in, System.out, args);</span>
+<span class="nc" id="L53">  }</span>
+
+  static void runWithStreams(InputStream inStream, OutputStream outStream, String[] args)
+      throws Exception {
+<span class="fc" id="L57">    try (ConfigurableApplicationContext ctx = createContext(args)) {</span>
+<span class="fc" id="L58">      LintService lint = ctx.getBean(LintService.class);</span>
+<span class="fc" id="L59">      ExternalCompileService compile = ctx.getBean(ExternalCompileService.class);</span>
+<span class="fc" id="L60">      CssCompileService cssCompile = ctx.getBean(CssCompileService.class);</span>
+<span class="fc" id="L61">      GuideService guides = ctx.getBean(GuideService.class);</span>
+<span class="fc" id="L62">      NativeStubService nativeStubs = ctx.getBean(NativeStubService.class);</span>
+
+<span class="fc" id="L64">      ModeState mode = new ModeState();</span>
+<span class="fc" id="L65">      try (BufferedReader in = reader(inStream);</span>
+<span class="fc" id="L66">          BufferedWriter out = writer(outStream)) {</span>
+<span class="fc" id="L67">        LOG.info(</span>
+            &quot;STDIO MCP started; active profiles: {}&quot;,
+<span class="fc" id="L69">            String.join(&quot;,&quot;, ctx.getEnvironment().getActiveProfiles()));</span>
+        String line;
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        while ((line = in.readLine()) != null) {</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">          if (line.isBlank()) {</span>
+<span class="fc" id="L73">            continue;</span>
+          }
+          RpcReq req;
+          try {
+<span class="fc" id="L77">            req = MAPPER.readValue(line, RpcReq.class);</span>
+<span class="fc" id="L78">            LOG.debug(</span>
+                &quot;Received request id={} method={} params={}&quot;,
+<span class="fc" id="L80">                req.id(),</span>
+<span class="fc" id="L81">                req.method(),</span>
+<span class="fc" id="L82">                req.params());</span>
+<span class="fc" id="L83">          } catch (IOException | RuntimeException e) {</span>
+<span class="fc" id="L84">            LOG.warn(&quot;Failed to parse incoming payload: {}&quot;, line, e);</span>
+<span class="fc" id="L85">            writeJson(</span>
+                out,
+                new RpcErr(
+<span class="fc" id="L88">                    &quot;2.0&quot;, null, Map.of(&quot;code&quot;, -32700, &quot;message&quot;, &quot;Parse error&quot;)));</span>
+<span class="fc" id="L89">            continue;</span>
+<span class="fc" id="L90">          }</span>
+
+          try {
+<span class="fc" id="L93">            handleRequest(req, out, lint, compile, cssCompile, guides, nativeStubs, mode);</span>
+<span class="fc" id="L94">          } catch (IOException | RuntimeException ex) {</span>
+<span class="fc" id="L95">            LOG.error(&quot;Error processing request id={}&quot;, req.id(), ex);</span>
+<span class="fc" id="L96">            writeJson(</span>
+                out,
+<span class="fc" id="L98">                new RpcErr(&quot;2.0&quot;, req.id(), Map.of(&quot;code&quot;, -32000, &quot;message&quot;, ex.toString())));</span>
+<span class="fc" id="L99">          }</span>
+<span class="fc" id="L100">        }</span>
+<span class="fc" id="L101">        LOG.info(&quot;STDIO MCP shutting down&quot;);</span>
+      }
+    }
+<span class="fc" id="L104">  }</span>
+
+  private static ConfigurableApplicationContext createContext(String[] args) {
+<span class="fc" id="L107">    return new SpringApplicationBuilder(McpApplication.class)</span>
+<span class="fc" id="L108">        .profiles(&quot;stdio&quot;)</span>
+<span class="fc" id="L109">        .web(WebApplicationType.NONE)</span>
+<span class="fc" id="L110">        .logStartupInfo(false)</span>
+<span class="fc" id="L111">        .run(args);</span>
+  }
+
+  private static BufferedReader reader(InputStream inStream) {
+<span class="fc" id="L115">    return new BufferedReader(new InputStreamReader(inStream, StandardCharsets.UTF_8));</span>
+  }
+
+  private static BufferedWriter writer(OutputStream outStream) {
+<span class="fc" id="L119">    return new BufferedWriter(new OutputStreamWriter(outStream, StandardCharsets.UTF_8));</span>
+  }
+
+  private static List&lt;Map&lt;String, Object&gt;&gt; createToolDescriptors() {
+<span class="fc" id="L123">    List&lt;Map&lt;String, Object&gt;&gt; descriptors = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L124">    descriptors.add(lintToolDescriptor());</span>
+<span class="fc" id="L125">    descriptors.add(compileToolDescriptor());</span>
+<span class="fc" id="L126">    descriptors.add(cssToolDescriptor());</span>
+<span class="fc" id="L127">    descriptors.add(nativeStubToolDescriptor());</span>
+<span class="fc" id="L128">    return List.copyOf(descriptors);</span>
+  }
+
+  private static Map&lt;String, Object&gt; lintToolDescriptor() {
+<span class="fc" id="L132">    Map&lt;String, Object&gt; descriptor = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L133">    descriptor.put(&quot;name&quot;, &quot;cn1_lint_code&quot;);</span>
+<span class="fc" id="L134">    descriptor.put(&quot;description&quot;, &quot;Lint Java for Codename One&quot;);</span>
+<span class="fc" id="L135">    descriptor.put(</span>
+        &quot;inputSchema&quot;,
+<span class="fc" id="L137">        Map.of(</span>
+            &quot;type&quot;,
+            &quot;object&quot;,
+            &quot;properties&quot;,
+<span class="fc" id="L141">            Map.of(&quot;code&quot;, Map.of(&quot;type&quot;, &quot;string&quot;)),</span>
+            &quot;required&quot;,
+<span class="fc" id="L143">            List.of(&quot;code&quot;)));</span>
+<span class="fc" id="L144">    return Map.copyOf(descriptor);</span>
+  }
+
+  private static Map&lt;String, Object&gt; compileToolDescriptor() {
+<span class="fc" id="L148">    Map&lt;String, Object&gt; fileSchema =</span>
+<span class="fc" id="L149">        Map.of(</span>
+            &quot;type&quot;,
+            &quot;object&quot;,
+            &quot;properties&quot;,
+<span class="fc" id="L153">            Map.of(</span>
+<span class="fc" id="L154">                &quot;path&quot;, Map.of(&quot;type&quot;, &quot;string&quot;),</span>
+<span class="fc" id="L155">                &quot;content&quot;, Map.of(&quot;type&quot;, &quot;string&quot;)),</span>
+            &quot;required&quot;,
+<span class="fc" id="L157">            List.of(&quot;path&quot;, &quot;content&quot;));</span>
+<span class="fc" id="L158">    Map&lt;String, Object&gt; descriptor = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L159">    descriptor.put(&quot;name&quot;, &quot;cn1_compile_check&quot;);</span>
+<span class="fc" id="L160">    descriptor.put(&quot;description&quot;, &quot;Compile Java 8 against CN1 jars&quot;);</span>
+<span class="fc" id="L161">    descriptor.put(</span>
+        &quot;inputSchema&quot;,
+<span class="fc" id="L163">        Map.of(</span>
+            &quot;type&quot;,
+            &quot;object&quot;,
+            &quot;properties&quot;,
+<span class="fc" id="L167">            Map.of(&quot;files&quot;, Map.of(&quot;type&quot;, &quot;array&quot;, &quot;items&quot;, fileSchema)),</span>
+            &quot;required&quot;,
+<span class="fc" id="L169">            List.of(&quot;files&quot;)));</span>
+<span class="fc" id="L170">    return Map.copyOf(descriptor);</span>
+  }
+
+  private static Map&lt;String, Object&gt; cssToolDescriptor() {
+<span class="fc" id="L174">    Map&lt;String, Object&gt; fileSchema =</span>
+<span class="fc" id="L175">        Map.of(</span>
+            &quot;type&quot;,
+            &quot;object&quot;,
+            &quot;properties&quot;,
+<span class="fc" id="L179">            Map.of(</span>
+<span class="fc" id="L180">                &quot;path&quot;, Map.of(&quot;type&quot;, &quot;string&quot;),</span>
+<span class="fc" id="L181">                &quot;content&quot;, Map.of(&quot;type&quot;, &quot;string&quot;)),</span>
+            &quot;required&quot;,
+<span class="fc" id="L183">            List.of(&quot;path&quot;, &quot;content&quot;));</span>
+<span class="fc" id="L184">    Map&lt;String, Object&gt; descriptor = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L185">    descriptor.put(&quot;name&quot;, &quot;cn1_compile_css&quot;);</span>
+<span class="fc" id="L186">    descriptor.put(&quot;description&quot;, &quot;Compile Codename One CSS using designer.jar&quot;);</span>
+<span class="fc" id="L187">    descriptor.put(</span>
+        &quot;inputSchema&quot;,
+<span class="fc" id="L189">        Map.of(</span>
+            &quot;type&quot;,
+            &quot;object&quot;,
+            &quot;properties&quot;,
+<span class="fc" id="L193">            Map.of(</span>
+<span class="fc" id="L194">                &quot;files&quot;, Map.of(&quot;type&quot;, &quot;array&quot;, &quot;items&quot;, fileSchema),</span>
+<span class="fc" id="L195">                &quot;inputPath&quot;, Map.of(&quot;type&quot;, &quot;string&quot;),</span>
+<span class="fc" id="L196">                &quot;outputPath&quot;, Map.of(&quot;type&quot;, &quot;string&quot;)),</span>
+            &quot;required&quot;,
+<span class="fc" id="L198">            List.of(&quot;files&quot;)));</span>
+<span class="fc" id="L199">    return Map.copyOf(descriptor);</span>
+  }
+
+  private static Map&lt;String, Object&gt; nativeStubToolDescriptor() {
+<span class="fc" id="L203">    Map&lt;String, Object&gt; fileSchema =</span>
+<span class="fc" id="L204">        Map.of(</span>
+            &quot;type&quot;,
+            &quot;object&quot;,
+            &quot;properties&quot;,
+<span class="fc" id="L208">            Map.of(</span>
+<span class="fc" id="L209">                &quot;path&quot;, Map.of(&quot;type&quot;, &quot;string&quot;),</span>
+<span class="fc" id="L210">                &quot;content&quot;, Map.of(&quot;type&quot;, &quot;string&quot;)),</span>
+            &quot;required&quot;,
+<span class="fc" id="L212">            List.of(&quot;path&quot;, &quot;content&quot;));</span>
+<span class="fc" id="L213">    Map&lt;String, Object&gt; descriptor = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L214">    descriptor.put(&quot;name&quot;, &quot;cn1_generate_native_stubs&quot;);</span>
+<span class="fc" id="L215">    descriptor.put(</span>
+        &quot;description&quot;, &quot;Generate Codename One native interface stubs&quot;);
+<span class="fc" id="L217">    descriptor.put(</span>
+        &quot;inputSchema&quot;,
+<span class="fc" id="L219">        Map.of(</span>
+            &quot;type&quot;,
+            &quot;object&quot;,
+            &quot;properties&quot;,
+<span class="fc" id="L223">            Map.of(</span>
+<span class="fc" id="L224">                &quot;interfaceName&quot;, Map.of(&quot;type&quot;, &quot;string&quot;),</span>
+<span class="fc" id="L225">                &quot;files&quot;, Map.of(&quot;type&quot;, &quot;array&quot;, &quot;items&quot;, fileSchema)),</span>
+            &quot;required&quot;,
+<span class="fc" id="L227">            List.of(&quot;interfaceName&quot;, &quot;files&quot;)));</span>
+<span class="fc" id="L228">    return Map.copyOf(descriptor);</span>
+  }
+
+  private static void handleRequest(
+      RpcReq req,
+      BufferedWriter out,
+      LintService lint,
+      ExternalCompileService compile,
+      CssCompileService cssCompile,
+      GuideService guides,
+      NativeStubService nativeStubs,
+      ModeState mode)
+      throws IOException {
+<span class="fc bfc" id="L241" title="All 2 branches covered.">    Map&lt;String, Object&gt; params = req.params() == null ? Map.of() : req.params();</span>
+<span class="fc bfc" id="L242" title="All 10 branches covered.">    switch (req.method()) {</span>
+<span class="fc" id="L243">      case &quot;initialize&quot; -&gt; handleInitialize(req, out, params);</span>
+<span class="fc" id="L244">      case &quot;tools/list&quot; -&gt; handleToolsList(req, out);</span>
+      case &quot;tools/call&quot; -&gt;
+<span class="fc" id="L246">          handleToolsCall(req, out, params, lint, compile, cssCompile, nativeStubs);</span>
+<span class="fc" id="L247">      case &quot;notifications/initialized&quot;, &quot;ping&quot; -&gt; handleNotification(req, out);</span>
+<span class="fc" id="L248">      case &quot;prompts/list&quot; -&gt; handlePromptsList(req, out);</span>
+<span class="fc" id="L249">      case &quot;resources/list&quot; -&gt; handleResourcesList(req, out, guides, mode);</span>
+<span class="fc" id="L250">      case &quot;resources/read&quot; -&gt; handleResourcesRead(req, out, guides, mode, params);</span>
+<span class="fc" id="L251">      case &quot;modes/list&quot; -&gt; handleModesList(req, out, mode);</span>
+<span class="fc" id="L252">      case &quot;modes/set&quot; -&gt; handleModesSet(req, out, params, mode);</span>
+      default -&gt;
+<span class="fc" id="L254">          writeJson(</span>
+              out,
+              new RpcErr(
+                  &quot;2.0&quot;,
+<span class="fc" id="L258">                  req.id(),</span>
+<span class="fc" id="L259">                  Map.of(&quot;code&quot;, -32601, &quot;message&quot;, &quot;Method not found: &quot; + req.method())));</span>
+    }
+<span class="fc" id="L261">  }</span>
+
+  private static void handleInitialize(
+      RpcReq req, BufferedWriter out, Map&lt;String, Object&gt; params) throws IOException {
+<span class="fc" id="L265">    Map&lt;String, Object&gt; capabilities =</span>
+<span class="fc" id="L266">        Map.of(</span>
+<span class="fc" id="L267">            &quot;tools&quot;, Map.of(),</span>
+<span class="fc" id="L268">            &quot;prompts&quot;, Map.of(),</span>
+<span class="fc" id="L269">            &quot;resources&quot;, Map.of(),</span>
+<span class="fc" id="L270">            &quot;modes&quot;, Map.of());</span>
+<span class="fc" id="L271">    Map&lt;String, Object&gt; result = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L272">    result.put(&quot;protocolVersion&quot;, params.getOrDefault(&quot;protocolVersion&quot;, &quot;2025-06-18&quot;));</span>
+<span class="fc" id="L273">    result.put(&quot;serverInfo&quot;, Map.of(&quot;name&quot;, &quot;cn1-mcp&quot;, &quot;version&quot;, &quot;0.1.0&quot;));</span>
+<span class="fc" id="L274">    result.put(&quot;capabilities&quot;, capabilities);</span>
+<span class="fc" id="L275">    LOG.info(&quot;Handled initialize request id={}&quot;, req.id());</span>
+<span class="fc" id="L276">    writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), result));</span>
+<span class="fc" id="L277">  }</span>
+
+  private static void handleToolsList(RpcReq req, BufferedWriter out) throws IOException {
+<span class="fc" id="L280">    LOG.info(&quot;Listed tools for request id={} ({} tools)&quot;, req.id(), TOOL_DESCRIPTORS.size());</span>
+<span class="fc" id="L281">    writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), Map.of(&quot;tools&quot;, TOOL_DESCRIPTORS)));</span>
+<span class="fc" id="L282">  }</span>
+
+  private static void handleToolsCall(
+      RpcReq req,
+      BufferedWriter out,
+      Map&lt;String, Object&gt; params,
+      LintService lint,
+      ExternalCompileService compile,
+      CssCompileService cssCompile,
+      NativeStubService nativeStubs)
+      throws IOException {
+<span class="fc" id="L293">    Object nameObj = params.get(&quot;name&quot;);</span>
+<span class="fc bfc" id="L294" title="All 2 branches covered.">    if (!(nameObj instanceof String name)) {</span>
+<span class="fc" id="L295">      throw new IllegalArgumentException(&quot;Missing tool name&quot;);</span>
+    }
+<span class="fc" id="L297">    Map&lt;String, Object&gt; arguments = extractArguments(params);</span>
+    Object toolPayload;
+<span class="pc bpc" id="L299" title="1 of 5 branches missed.">    switch (name) {</span>
+      case &quot;cn1_lint_code&quot; -&gt; {
+<span class="fc" id="L301">        String code = (String) arguments.get(&quot;code&quot;);</span>
+<span class="pc bpc" id="L302" title="1 of 2 branches missed.">        int length = code != null ? code.length() : 0;</span>
+<span class="fc" id="L303">        LOG.info(&quot;Invoking lint tool for request id={} ({} chars)&quot;, req.id(), length);</span>
+<span class="fc" id="L304">        toolPayload = lint.lint(new LintRequest(code, &quot;java&quot;, List.of()));</span>
+<span class="fc" id="L305">      }</span>
+      case &quot;cn1_compile_check&quot; -&gt; {
+<span class="fc" id="L307">        List&lt;FileEntry&gt; files = buildFiles(arguments);</span>
+<span class="fc" id="L308">        LOG.info(&quot;Invoking compile tool for request id={} ({} files)&quot;, req.id(), files.size());</span>
+<span class="fc" id="L309">        toolPayload = compile.compile(new CompileRequest(files, null));</span>
+<span class="fc" id="L310">      }</span>
+      case &quot;cn1_compile_css&quot; -&gt; {
+<span class="fc" id="L312">        List&lt;FileEntry&gt; files = buildFiles(arguments);</span>
+<span class="fc" id="L313">        String inputPath = (String) arguments.get(&quot;inputPath&quot;);</span>
+<span class="fc" id="L314">        String outputPath = (String) arguments.get(&quot;outputPath&quot;);</span>
+<span class="fc" id="L315">        LOG.info(</span>
+            &quot;Invoking CSS compile tool for request id={} ({} files) input={} output={}&quot;,
+<span class="fc" id="L317">            req.id(),</span>
+<span class="fc" id="L318">            files.size(),</span>
+            inputPath,
+            outputPath);
+<span class="fc" id="L321">        toolPayload = cssCompile.compile(new CssCompileRequest(files, inputPath, outputPath));</span>
+<span class="fc" id="L322">      }</span>
+      case &quot;cn1_generate_native_stubs&quot; -&gt; {
+<span class="fc" id="L324">        List&lt;FileEntry&gt; files = buildFiles(arguments);</span>
+<span class="fc" id="L325">        String interfaceName = (String) arguments.get(&quot;interfaceName&quot;);</span>
+<span class="fc" id="L326">        LOG.info(</span>
+            &quot;Invoking native stub generator for request id={} interface={} ({} files)&quot;,
+<span class="fc" id="L328">            req.id(),</span>
+            interfaceName,
+<span class="fc" id="L330">            files.size());</span>
+<span class="fc" id="L331">        toolPayload = nativeStubs.generate(new NativeStubRequest(files, interfaceName));</span>
+<span class="fc" id="L332">      }</span>
+<span class="nc" id="L333">      default -&gt; throw new IllegalArgumentException(&quot;Unknown tool: &quot; + name);</span>
+    }
+
+<span class="fc" id="L336">    Map&lt;String, Object&gt; response =</span>
+<span class="fc" id="L337">        Map.of(</span>
+            &quot;content&quot;,
+<span class="fc" id="L339">            List.of(</span>
+<span class="fc" id="L340">                Map.of(</span>
+                    &quot;type&quot;,
+                    &quot;text&quot;,
+                    &quot;text&quot;,
+<span class="fc" id="L344">                    MAPPER.writeValueAsString(toolPayload))));</span>
+<span class="fc" id="L345">    LOG.debug(&quot;Tool {} completed for request id={} -&gt; {}&quot;, name, req.id(), toolPayload);</span>
+<span class="fc" id="L346">    writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), response));</span>
+<span class="fc" id="L347">  }</span>
+
+  private static Map&lt;String, Object&gt; extractArguments(Map&lt;String, Object&gt; params) {
+<span class="fc" id="L350">    Object arguments = params.get(&quot;arguments&quot;);</span>
+<span class="pc bpc" id="L351" title="1 of 2 branches missed.">    if (arguments instanceof Map&lt;?, ?&gt; map) {</span>
+      @SuppressWarnings(&quot;unchecked&quot;)
+<span class="fc" id="L353">      Map&lt;String, Object&gt; cast = (Map&lt;String, Object&gt;) map;</span>
+<span class="fc" id="L354">      return cast;</span>
+    }
+<span class="nc" id="L356">    return Map.of();</span>
+  }
+
+  private static List&lt;FileEntry&gt; buildFiles(Map&lt;String, Object&gt; arguments) {
+<span class="fc" id="L360">    Object filesObj = arguments.get(&quot;files&quot;);</span>
+<span class="pc bpc" id="L361" title="1 of 2 branches missed.">    if (!(filesObj instanceof List&lt;?&gt; rawList)) {</span>
+<span class="nc" id="L362">      return List.of();</span>
+    }
+<span class="fc" id="L364">    List&lt;FileEntry&gt; entries = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L365" title="All 2 branches covered.">    for (Object element : rawList) {</span>
+<span class="pc bpc" id="L366" title="1 of 2 branches missed.">      if (element instanceof Map&lt;?, ?&gt; map) {</span>
+        @SuppressWarnings(&quot;unchecked&quot;)
+<span class="fc" id="L368">        Map&lt;String, Object&gt; cast = (Map&lt;String, Object&gt;) map;</span>
+<span class="fc" id="L369">        String path = (String) cast.get(&quot;path&quot;);</span>
+<span class="fc" id="L370">        String content = (String) cast.get(&quot;content&quot;);</span>
+<span class="pc bpc" id="L371" title="2 of 4 branches missed.">        if (path != null &amp;&amp; content != null) {</span>
+<span class="fc" id="L372">          entries.add(new FileEntry(path, content));</span>
+        }
+      }
+<span class="fc" id="L375">    }</span>
+<span class="fc" id="L376">    return entries;</span>
+  }
+
+  private static void handleNotification(RpcReq req, BufferedWriter out) throws IOException {
+<span class="fc" id="L380">    LOG.debug(&quot;Received {} notification for id={}&quot;, req.method(), req.id());</span>
+<span class="fc bfc" id="L381" title="All 2 branches covered.">    if (req.id() != null) {</span>
+<span class="fc" id="L382">      writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), Map.of(&quot;ok&quot;, true)));</span>
+    }
+<span class="fc" id="L384">  }</span>
+
+  private static void handlePromptsList(RpcReq req, BufferedWriter out) throws IOException {
+<span class="fc" id="L387">    LOG.info(&quot;Listing prompts for request id={}&quot;, req.id());</span>
+<span class="fc" id="L388">    writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), Map.of(&quot;prompts&quot;, List.of())));</span>
+<span class="fc" id="L389">  }</span>
+
+  private static void handleResourcesList(
+      RpcReq req, BufferedWriter out, GuideService guides, ModeState mode) throws IOException {
+<span class="fc" id="L393">    LOG.info(&quot;Listing resources for request id={} mode={}&quot;, req.id(), mode.current);</span>
+    List&lt;Map&lt;String, Object&gt;&gt; resources;
+<span class="fc bfc" id="L395" title="All 2 branches covered.">    if (GUIDE_MODE.equals(mode.current)) {</span>
+<span class="fc" id="L396">      resources = guides.listGuides().stream()</span>
+<span class="fc" id="L397">          .map(</span>
+              guide -&gt; {
+<span class="fc" id="L399">                Map&lt;String, Object&gt; descriptor = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L400">                descriptor.put(&quot;uri&quot;, &quot;guide://&quot; + guide.id());</span>
+<span class="fc" id="L401">                descriptor.put(&quot;name&quot;, guide.title());</span>
+<span class="fc" id="L402">                descriptor.put(&quot;description&quot;, guide.description());</span>
+<span class="fc" id="L403">                descriptor.put(&quot;mimeType&quot;, &quot;text/markdown&quot;);</span>
+<span class="fc" id="L404">                return descriptor;</span>
+              })
+<span class="fc" id="L406">          .toList();</span>
+    } else {
+<span class="fc" id="L408">      resources = List.of();</span>
+    }
+<span class="fc" id="L410">    writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), Map.of(&quot;resources&quot;, resources)));</span>
+<span class="fc" id="L411">  }</span>
+
+  private static void handleResourcesRead(
+      RpcReq req,
+      BufferedWriter out,
+      GuideService guides,
+      ModeState mode,
+      Map&lt;String, Object&gt; params)
+      throws IOException {
+<span class="pc bpc" id="L420" title="1 of 2 branches missed.">    if (!GUIDE_MODE.equals(mode.current)) {</span>
+<span class="nc" id="L421">      throw new IllegalStateException(&quot;Guide resources are only available in guide mode&quot;);</span>
+    }
+<span class="fc" id="L423">    String uri = (String) params.get(&quot;uri&quot;);</span>
+<span class="pc bpc" id="L424" title="1 of 2 branches missed.">    if (uri == null) {</span>
+<span class="nc" id="L425">      throw new IllegalArgumentException(&quot;Missing uri parameter for resources/read&quot;);</span>
+    }
+<span class="fc" id="L427">    final String guideScheme = &quot;guide://&quot;;</span>
+<span class="pc bpc" id="L428" title="1 of 2 branches missed.">    if (!uri.startsWith(guideScheme)) {</span>
+<span class="nc" id="L429">      throw new IllegalArgumentException(&quot;Unsupported guide uri: &quot; + uri);</span>
+    }
+<span class="fc" id="L431">    String guideId = uri.substring(guideScheme.length());</span>
+<span class="fc" id="L432">    var guide =</span>
+        guides
+<span class="fc" id="L434">            .findGuide(guideId)</span>
+<span class="fc" id="L435">            .orElseThrow(() -&gt; new IllegalArgumentException(&quot;Unknown guide: &quot; + guideId));</span>
+    try {
+<span class="fc" id="L437">      String text = guides.loadGuide(guideId);</span>
+<span class="fc" id="L438">      Map&lt;String, Object&gt; content = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L439">      content.put(&quot;uri&quot;, uri);</span>
+<span class="fc" id="L440">      content.put(&quot;name&quot;, guide.title());</span>
+<span class="fc" id="L441">      content.put(&quot;mimeType&quot;, &quot;text/markdown&quot;);</span>
+<span class="fc" id="L442">      content.put(&quot;text&quot;, text);</span>
+<span class="fc" id="L443">      LOG.info(&quot;Read guide {} ({} chars) for request id={}&quot;, guideId, text.length(), req.id());</span>
+<span class="fc" id="L444">      writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), Map.of(&quot;contents&quot;, List.of(content))));</span>
+<span class="nc" id="L445">    } catch (IOException e) {</span>
+<span class="nc" id="L446">      LOG.error(</span>
+          &quot;Failed to load guide {} for request id={}: {}&quot;,
+          guideId,
+<span class="nc" id="L449">          req.id(),</span>
+<span class="nc" id="L450">          e.getMessage(),</span>
+          e);
+<span class="nc" id="L452">      writeJson(</span>
+          out,
+          new RpcErr(
+              &quot;2.0&quot;,
+<span class="nc" id="L456">              req.id(),</span>
+<span class="nc" id="L457">              Map.of(&quot;code&quot;, -32001, &quot;message&quot;, &quot;Failed to load guide: &quot; + e.getMessage())));</span>
+<span class="fc" id="L458">    }</span>
+<span class="fc" id="L459">  }</span>
+
+  private static void handleModesList(RpcReq req, BufferedWriter out, ModeState mode)
+      throws IOException {
+<span class="fc" id="L463">    LOG.info(&quot;Listing modes for request id={}&quot;, req.id());</span>
+<span class="fc" id="L464">    Map&lt;String, Object&gt; defaultDescriptor = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L465">    defaultDescriptor.put(&quot;name&quot;, DEFAULT_MODE);</span>
+<span class="fc" id="L466">    defaultDescriptor.put(&quot;description&quot;, &quot;Default Codename One tooling&quot;);</span>
+<span class="fc" id="L467">    defaultDescriptor.put(</span>
+        &quot;instructions&quot;, &quot;Use lint/compile tools for general development.&quot;);
+<span class="fc" id="L469">    defaultDescriptor.put(&quot;isDefault&quot;, Boolean.TRUE);</span>
+
+<span class="fc" id="L471">    Map&lt;String, Object&gt; guideDescriptor = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L472">    guideDescriptor.put(&quot;name&quot;, GUIDE_MODE);</span>
+<span class="fc" id="L473">    guideDescriptor.put(&quot;description&quot;, &quot;Browse Codename One onboarding guides&quot;);</span>
+<span class="fc" id="L474">    guideDescriptor.put(</span>
+        &quot;instructions&quot;, &quot;Call resources/list and resources/read to view Markdown guides.&quot;);
+<span class="fc" id="L476">    guideDescriptor.put(&quot;isDefault&quot;, Boolean.FALSE);</span>
+
+<span class="fc" id="L478">    List&lt;Map&lt;String, Object&gt;&gt; modes = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L479">    modes.add(defaultDescriptor);</span>
+<span class="fc" id="L480">    modes.add(guideDescriptor);</span>
+
+<span class="fc" id="L482">    Map&lt;String, Object&gt; result = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L483">    result.put(&quot;modes&quot;, modes);</span>
+<span class="fc" id="L484">    result.put(&quot;current&quot;, mode.current);</span>
+<span class="fc" id="L485">    writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), result));</span>
+<span class="fc" id="L486">  }</span>
+
+  private static void handleModesSet(
+      RpcReq req, BufferedWriter out, Map&lt;String, Object&gt; params, ModeState mode)
+      throws IOException {
+<span class="fc" id="L491">    Object requested = params.get(&quot;mode&quot;);</span>
+<span class="pc bpc" id="L492" title="1 of 2 branches missed.">    if (!(requested instanceof String value)) {</span>
+<span class="nc" id="L493">      throw new IllegalArgumentException(&quot;Missing mode parameter for modes/set&quot;);</span>
+    }
+<span class="pc bpc" id="L495" title="1 of 4 branches missed.">    if (!Objects.equals(value, DEFAULT_MODE) &amp;&amp; !Objects.equals(value, GUIDE_MODE)) {</span>
+<span class="fc" id="L496">      throw new IllegalArgumentException(&quot;Unsupported mode: &quot; + value);</span>
+    }
+<span class="fc" id="L498">    mode.current = value;</span>
+<span class="fc" id="L499">    LOG.info(&quot;Mode set to {} for request id={}&quot;, value, req.id());</span>
+<span class="fc" id="L500">    writeJson(out, new RpcRes(&quot;2.0&quot;, req.id(), Map.of(&quot;mode&quot;, value)));</span>
+<span class="fc" id="L501">  }</span>
+
+  private static void writeJson(BufferedWriter out, Object obj) throws IOException {
+<span class="fc" id="L504">    out.write(MAPPER.writeValueAsString(obj));</span>
+<span class="fc" id="L505">    out.write('\n');</span>
+<span class="fc" id="L506">    out.flush();</span>
+<span class="fc" id="L507">  }</span>
+
+<span class="fc" id="L509">  private static final class ModeState {</span>
+<span class="fc" id="L510">    private String current = DEFAULT_MODE;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

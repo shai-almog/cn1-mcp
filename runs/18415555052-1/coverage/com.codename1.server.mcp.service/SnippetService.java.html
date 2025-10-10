@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SnippetService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mcp</a> &gt; <a href="index.source.html" class="el_package">com.codename1.server.mcp.service</a> &gt; <span class="el_source">SnippetService.java</span></div><h1>SnippetService.java</h1><pre class="source lang-java linenums">package com.codename1.server.mcp.service;
+
+import com.codename1.server.mcp.dto.ExplainResponse;
+import com.codename1.server.mcp.dto.Snippet;
+import com.codename1.server.mcp.dto.SnippetsResponse;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.stereotype.Service;
+
+/** Provides read-only access to the snippet markdown files bundled with the MCP server. */
+@Service
+public class SnippetService {
+<span class="fc" id="L27">  private static final Logger LOG = LoggerFactory.getLogger(SnippetService.class);</span>
+  private final Map&lt;String, List&lt;Snippet&gt;&gt; db;
+
+  /**
+   * Creates a snippet service backed by markdown files discovered on the classpath.
+   *
+   * @param resolver resource resolver used to enumerate bundled snippets
+   */
+<span class="fc" id="L35">  public SnippetService(ResourcePatternResolver resolver) {</span>
+<span class="fc" id="L36">    this.db = loadSnippets(resolver);</span>
+<span class="fc" id="L37">    LOG.info(&quot;Loaded {} snippet topics from classpath&quot;, db.size());</span>
+<span class="fc" id="L38">  }</span>
+
+  /**
+   * Returns all snippets for the provided topic, or an empty list when none are available.
+   *
+   * @param topic the snippet topic to fetch
+   * @return the collection of snippets for the topic
+   */
+  public SnippetsResponse get(String topic) {
+<span class="fc" id="L47">    var snippets = db.getOrDefault(normalize(topic), List.of());</span>
+<span class="fc" id="L48">    LOG.info(&quot;Fetching snippets for topic {} -&gt; {} matches&quot;, topic, snippets.size());</span>
+<span class="fc" id="L49">    return new SnippetsResponse(snippets);</span>
+  }
+
+  /**
+   * Provides a short explanation of well-known rule identifiers surfaced by lint tooling.
+   *
+   * @param ruleId the rule identifier to explain
+   * @return the explanation response
+   */
+  public ExplainResponse explain(String ruleId) {
+    ExplainResponse response;
+<span class="pc bpc" id="L60" title="1 of 3 branches missed.">    switch (ruleId) {</span>
+      case &quot;CN1_EDT_RULE&quot;:
+<span class="fc" id="L62">        response =</span>
+            new ExplainResponse(
+                &quot;UI changes must run on the Event Dispatch Thread (EDT).&quot;,
+                &quot;form.show(); // anywhere&quot;,
+                &quot;Display.getInstance().callSerially(() -&gt; form.show());&quot;);
+<span class="fc" id="L67">        break;</span>
+      case &quot;CN1_FORBIDDEN_IMPORT&quot;:
+<span class="nc" id="L69">        response =</span>
+            new ExplainResponse(
+                &quot;AWT/Swing/JavaFX are not supported on CN1.&quot;,
+                &quot;import javax.swing.JButton; new JButton();&quot;,
+                &quot;import com.codename1.ui.Button; new Button();&quot;);
+<span class="nc" id="L74">        break;</span>
+      default:
+<span class="fc" id="L76">        response = new ExplainResponse(&quot;No summary for &quot; + ruleId, &quot;&quot;, &quot;&quot;);</span>
+        break;
+    }
+<span class="fc" id="L79">    LOG.info(&quot;Explain lookup for rule {} -&gt; summaryLength={}&quot;, ruleId, response.summary().length());</span>
+<span class="fc" id="L80">    return response;</span>
+  }
+
+  private Map&lt;String, List&lt;Snippet&gt;&gt; loadSnippets(ResourcePatternResolver resolver) {
+<span class="fc" id="L84">    var map = new LinkedHashMap&lt;String, List&lt;Snippet&gt;&gt;();</span>
+    try {
+<span class="fc" id="L86">      Resource[] resources = resolver.getResources(&quot;classpath*:static/docs/snippets/**/*.md&quot;);</span>
+<span class="fc" id="L87">      Arrays.sort(</span>
+          resources,
+          (a, b) -&gt; {
+            try {
+<span class="fc" id="L91">              return a.getURL().toString().compareTo(b.getURL().toString());</span>
+<span class="fc" id="L92">            } catch (IOException e) {</span>
+<span class="fc" id="L93">              String firstName = a.getFilename();</span>
+<span class="fc" id="L94">              String secondName = b.getFilename();</span>
+<span class="pc bpc" id="L95" title="2 of 4 branches missed.">              if (firstName == null || secondName == null) {</span>
+                // SpotBugs: fall back to stable ordering even when filenames are missing.
+<span class="nc" id="L97">                return Integer.compare(System.identityHashCode(a), System.identityHashCode(b));</span>
+              }
+<span class="fc" id="L99">              return firstName.compareTo(secondName);</span>
+            }
+          });
+
+<span class="fc bfc" id="L103" title="All 2 branches covered.">      for (Resource resource : resources) {</span>
+<span class="fc" id="L104">        parseResource(resource)</span>
+<span class="fc" id="L105">            .ifPresent(</span>
+                entry -&gt; {
+<span class="fc" id="L107">                  var topicKey = normalize(entry.topic);</span>
+<span class="fc" id="L108">                  map.computeIfAbsent(topicKey, key -&gt; new ArrayList&lt;&gt;()).add(entry.snippet);</span>
+<span class="fc" id="L109">                });</span>
+      }
+<span class="nc" id="L111">    } catch (IOException e) {</span>
+<span class="nc" id="L112">      LOG.error(&quot;Failed to enumerate snippet resources&quot;, e);</span>
+<span class="fc" id="L113">    }</span>
+<span class="fc" id="L114">    return map;</span>
+  }
+
+<span class="fc" id="L117">  private record SnippetEntry(String topic, Snippet snippet) {}</span>
+
+  private Optional&lt;SnippetEntry&gt; parseResource(Resource resource) {
+<span class="fc" id="L120">    try (var reader =</span>
+        new BufferedReader(
+<span class="fc" id="L122">            new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {</span>
+<span class="fc" id="L123">      var raw = reader.lines().collect(Collectors.joining(&quot;\n&quot;));</span>
+<span class="fc" id="L124">      raw = stripBom(raw);</span>
+<span class="fc" id="L125">      var normalized = raw.replace(&quot;\r\n&quot;, &quot;\n&quot;).trim();</span>
+<span class="fc bfc" id="L126" title="All 2 branches covered.">      if (!normalized.startsWith(&quot;---\n&quot;)) {</span>
+<span class="fc" id="L127">        LOG.warn(&quot;Snippet {} is missing front matter&quot;, resource.getFilename());</span>
+<span class="fc" id="L128">        return Optional.empty();</span>
+      }
+<span class="fc" id="L130">      int end = normalized.indexOf(&quot;\n---\n&quot;);</span>
+<span class="pc bpc" id="L131" title="1 of 2 branches missed.">      if (end &lt; 0) {</span>
+<span class="nc" id="L132">        LOG.warn(&quot;Snippet {} front matter is not terminated&quot;, resource.getFilename());</span>
+<span class="nc" id="L133">        return Optional.empty();</span>
+      }
+<span class="fc" id="L135">      String frontMatter = normalized.substring(4, end);</span>
+<span class="fc" id="L136">      String body = normalized.substring(end + 5).trim();</span>
+<span class="fc" id="L137">      var metadata = parseFrontMatter(frontMatter);</span>
+<span class="fc" id="L138">      var topic = metadata.get(&quot;topic&quot;);</span>
+<span class="fc" id="L139">      var title = metadata.get(&quot;title&quot;);</span>
+<span class="fc" id="L140">      var description = metadata.get(&quot;description&quot;);</span>
+<span class="pc bpc" id="L141" title="3 of 6 branches missed.">      if (topic == null || title == null || description == null) {</span>
+<span class="nc" id="L142">        LOG.warn(</span>
+            &quot;Snippet {} missing required metadata (topic/title/description)&quot;,
+<span class="nc" id="L144">            resource.getFilename());</span>
+<span class="nc" id="L145">        return Optional.empty();</span>
+      }
+<span class="fc" id="L147">      return Optional.of(new SnippetEntry(topic, new Snippet(title, description, body)));</span>
+<span class="pc" id="L148">    } catch (IOException e) {</span>
+<span class="nc" id="L149">      LOG.warn(&quot;Failed to parse snippet {}&quot;, resource.getFilename(), e);</span>
+<span class="nc" id="L150">      return Optional.empty();</span>
+    }
+  }
+
+  private Map&lt;String, String&gt; parseFrontMatter(String frontMatter) {
+<span class="fc" id="L155">    var metadata = new LinkedHashMap&lt;String, String&gt;();</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">    for (String line : frontMatter.split(&quot;\n&quot;)) {</span>
+<span class="fc" id="L157">      var trimmed = line.trim();</span>
+<span class="pc bpc" id="L158" title="2 of 4 branches missed.">      if (trimmed.isEmpty() || trimmed.startsWith(&quot;#&quot;)) {</span>
+<span class="nc" id="L159">        continue;</span>
+      }
+<span class="fc" id="L161">      int sep = trimmed.indexOf(':');</span>
+<span class="pc bpc" id="L162" title="1 of 2 branches missed.">      if (sep &lt; 0) {</span>
+<span class="nc" id="L163">        continue;</span>
+      }
+<span class="fc" id="L165">      String key = trimmed.substring(0, sep).trim().toLowerCase(Locale.ROOT);</span>
+<span class="fc" id="L166">      String value = trimmed.substring(sep + 1).trim();</span>
+<span class="fc" id="L167">      metadata.put(key, value);</span>
+    }
+<span class="fc" id="L169">    return metadata;</span>
+  }
+
+  private String stripBom(String text) {
+<span class="pc bpc" id="L173" title="1 of 2 branches missed.">    if (text.startsWith(&quot;\uFEFF&quot;)) {</span>
+<span class="nc" id="L174">      return text.substring(1);</span>
+    }
+<span class="fc" id="L176">    return text;</span>
+  }
+
+  private String normalize(String topic) {
+<span class="pc bpc" id="L180" title="1 of 2 branches missed.">    return topic == null ? &quot;&quot; : topic.trim().toLowerCase(Locale.ROOT);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

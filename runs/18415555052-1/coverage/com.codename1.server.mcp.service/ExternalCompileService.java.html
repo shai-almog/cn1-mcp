@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ExternalCompileService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mcp</a> &gt; <a href="index.source.html" class="el_package">com.codename1.server.mcp.service</a> &gt; <span class="el_source">ExternalCompileService.java</span></div><h1>ExternalCompileService.java</h1><pre class="source lang-java linenums">package com.codename1.server.mcp.service;
+
+import com.codename1.server.mcp.dto.CompileRequest;
+import com.codename1.server.mcp.dto.CompileResponse;
+import com.codename1.server.mcp.dto.FileEntry;
+import com.codename1.server.mcp.tools.GlobalExtractor;
+import com.codename1.server.mcp.tools.Jdk8ManagerFromResource;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/** Compiles user-provided Java sources using the embedded Codename One toolchain. */
+@Service
+public class ExternalCompileService {
+<span class="fc" id="L23">  private static final Logger LOG = LoggerFactory.getLogger(ExternalCompileService.class);</span>
+
+  private final GlobalExtractor extractor;
+  private final Jdk8ManagerFromResource jdk8;
+
+<span class="fc" id="L28">  public ExternalCompileService(GlobalExtractor extractor, Jdk8ManagerFromResource jdk8) {</span>
+<span class="fc" id="L29">    this.extractor = extractor;</span>
+<span class="fc" id="L30">    this.jdk8 = jdk8;</span>
+<span class="fc" id="L31">  }</span>
+
+  /**
+   * Compiles the provided Java sources and returns the javac output and status.
+   */
+  public CompileResponse compile(CompileRequest req) {
+    try {
+<span class="pc bpc" id="L38" title="1 of 2 branches missed.">      List&lt;FileEntry&gt; files = req.files() == null ? List.of() : List.copyOf(req.files());</span>
+<span class="fc" id="L39">      LOG.info(&quot;Starting compile request with {} files&quot;, files.size());</span>
+
+      // Extract libs once
+<span class="fc" id="L42">      Path cn1 = extractor.ensureFile(&quot;/cn1libs/CodenameOne.jar&quot;);</span>
+<span class="fc" id="L43">      Path boot = extractor.ensureFile(&quot;/cn1libs/CLDC11.jar&quot;);</span>
+
+      // Use bundled JDK 8
+<span class="fc" id="L46">      Path javac = jdk8.ensureJavac8();</span>
+<span class="fc" id="L47">      LOG.debug(&quot;Resolved javac path: {}&quot;, javac);</span>
+
+      // Write sources
+<span class="fc" id="L50">      Path work = Files.createTempDirectory(&quot;cn1c-&quot;);</span>
+<span class="fc" id="L51">      List&lt;Path&gt; sources = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L52" title="All 2 branches covered.">      for (var f : files) {</span>
+<span class="fc" id="L53">        Path p = work.resolve(f.path());</span>
+<span class="fc" id="L54">        Path parent = p.getParent();</span>
+<span class="pc bpc" id="L55" title="1 of 2 branches missed.">        if (parent != null) {</span>
+<span class="fc" id="L56">          Files.createDirectories(parent);</span>
+        }
+        // SpotBugs: guard against files placed at the workspace root which have no parent
+        // directory.
+<span class="fc" id="L60">        Files.writeString(p, f.content(), StandardCharsets.UTF_8);</span>
+<span class="fc" id="L61">        sources.add(p);</span>
+<span class="fc" id="L62">      }</span>
+
+<span class="fc" id="L64">      List&lt;String&gt; cmd =</span>
+          new ArrayList&lt;&gt;(
+<span class="fc" id="L66">              List.of(</span>
+<span class="fc" id="L67">                  javac.toString(),</span>
+                  &quot;-source&quot;,
+                  &quot;8&quot;,
+                  &quot;-target&quot;,
+                  &quot;8&quot;,
+                  &quot;-Xlint:all&quot;,
+                  &quot;-extdirs&quot;,
+                  &quot;&quot;,
+                  &quot;-classpath&quot;,
+<span class="fc" id="L76">                  cn1.toString()));</span>
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">      if (Files.exists(boot)) {</span>
+<span class="fc" id="L78">        cmd.addAll(List.of(&quot;-bootclasspath&quot;, boot.toString()));</span>
+      }
+<span class="fc" id="L80">      sources.forEach(s -&gt; cmd.add(s.toString()));</span>
+<span class="fc" id="L81">      LOG.debug(&quot;Compile command: {}&quot;, cmd);</span>
+
+<span class="fc" id="L83">      ProcessBuilder pb = new ProcessBuilder(cmd);</span>
+<span class="fc" id="L84">      pb.directory(work.toFile());</span>
+<span class="fc" id="L85">      pb.redirectErrorStream(true);</span>
+<span class="fc" id="L86">      Process pr = pb.start();</span>
+      String out;
+<span class="fc" id="L88">      try (InputStream is = pr.getInputStream()) {</span>
+<span class="fc" id="L89">        out = new String(is.readAllBytes(), StandardCharsets.UTF_8);</span>
+      }
+<span class="fc" id="L91">      int code = pr.waitFor();</span>
+<span class="pc bpc" id="L92" title="1 of 4 branches missed.">      boolean ok = code == 0 &amp;&amp; !out.toLowerCase(Locale.ENGLISH).contains(&quot;error:&quot;);</span>
+<span class="fc" id="L93">      LOG.info(&quot;Compile finished with exitCode={} success={}&quot;, code, ok);</span>
+<span class="fc" id="L94">      return new CompileResponse(ok, out, List.of());</span>
+<span class="nc" id="L95">    } catch (IOException e) {</span>
+<span class="nc" id="L96">      LOG.error(&quot;Compile failed&quot;, e);</span>
+<span class="nc" id="L97">      return new CompileResponse(false, e.toString(), List.of());</span>
+<span class="nc" id="L98">    } catch (InterruptedException e) {</span>
+<span class="nc" id="L99">      Thread.currentThread().interrupt();</span>
+<span class="nc" id="L100">      LOG.error(&quot;Compile interrupted&quot;, e);</span>
+<span class="nc" id="L101">      return new CompileResponse(false, e.toString(), List.of());</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

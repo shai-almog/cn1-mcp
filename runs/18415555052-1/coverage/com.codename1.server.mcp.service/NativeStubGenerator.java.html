@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NativeStubGenerator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mcp</a> &gt; <a href="index.source.html" class="el_package">com.codename1.server.mcp.service</a> &gt; <span class="el_source">NativeStubGenerator.java</span></div><h1>NativeStubGenerator.java</h1><pre class="source lang-java linenums">package com.codename1.server.mcp.service;
+
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.IntStream;
+
+/**
+ * Port of the Codename One native stub generator that operates purely in
+ * memory. The implementation mirrors the behaviour of the Ant-based tooling in
+ * the Codename One build server so that agents can generate the boilerplate for
+ * all supported native platforms directly from the MCP.
+ */
+class NativeStubGenerator {
+    private static final String NATIVE_INTERFACE_FQN = &quot;com.codename1.system.NativeInterface&quot;;
+
+    private final Class&lt;?&gt; nativeInterface;
+    private final List&lt;Method&gt; declaredMethods;
+
+    @SuppressFBWarnings(value = &quot;CT_CONSTRUCTOR_THROW&quot;, justification = &quot;Reflection failures should surface to the caller&quot;)
+<span class="fc" id="L30">    NativeStubGenerator(Class&lt;?&gt; nativeInterface) {</span>
+<span class="fc" id="L31">        this.nativeInterface = nativeInterface;</span>
+<span class="fc" id="L32">        this.declaredMethods = Arrays.stream(nativeInterface.getMethods())</span>
+<span class="pc bpc" id="L33" title="1 of 2 branches missed.">                .filter(m -&gt; !m.getDeclaringClass().equals(Object.class))</span>
+<span class="fc" id="L34">                .toList();</span>
+<span class="fc" id="L35">    }</span>
+
+    String verify() {
+<span class="pc bpc" id="L38" title="1 of 2 branches missed.">        if (!nativeInterface.isInterface()) {</span>
+<span class="nc" id="L39">            return &quot;Not an interface! Native interfaces must be interfaces.&quot;;</span>
+        }
+
+<span class="pc bpc" id="L42" title="1 of 2 branches missed.">        if (!isSubinterfaceOfNativeInterface(nativeInterface)) {</span>
+<span class="nc" id="L43">            return &quot;The interface MUST implement NativeInterface!&quot;;</span>
+        }
+
+<span class="pc bpc" id="L46" title="1 of 2 branches missed.">        if ((nativeInterface.getModifiers() &amp; Modifier.PUBLIC) != Modifier.PUBLIC) {</span>
+<span class="nc" id="L47">            return &quot;The interface must be a public interface and not an inner class&quot;;</span>
+        }
+
+<span class="pc bpc" id="L50" title="1 of 2 branches missed.">        if (nativeInterface.getEnclosingClass() != null) {</span>
+<span class="nc" id="L51">            return &quot;The interface must be a public interface and not an inner class&quot;;</span>
+        }
+
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">        if (nativeInterface.getPackage() == null) {</span>
+<span class="nc" id="L55">            return &quot;The interface must declare a package&quot;;</span>
+        }
+
+<span class="fc" id="L58">        Set&lt;String&gt; methodNames = new HashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        for (Method m : declaredMethods) {</span>
+<span class="fc" id="L60">            String lowerCaseName = m.getName().toLowerCase(Locale.ROOT);</span>
+<span class="pc bpc" id="L61" title="1 of 2 branches missed.">            if (!methodNames.add(lowerCaseName)) {</span>
+<span class="nc" id="L62">                return &quot;A method with the same name exists for the method &quot; + m.getName()</span>
+                        + &quot;, notice that duplicate names (even with different case) aren't supported!&quot;;
+            }
+
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">            if (m.getExceptionTypes().length &gt; 0) {</span>
+<span class="nc" id="L67">                return &quot;Exceptions aren't supported when communicating with native interfaces, in the method &quot; + m.getName();</span>
+            }
+
+<span class="pc bpc" id="L70" title="1 of 2 branches missed.">            if (m.getName().equalsIgnoreCase(&quot;init&quot;)) {</span>
+<span class="nc" id="L71">                return &quot;init() is a reserved method in iOS (a constructor of sort) naming a method init will not work properly.&quot;;</span>
+            }
+
+<span class="fc bfc" id="L74" title="All 2 branches covered.">            if (!isValidType(m.getReturnType())) {</span>
+<span class="fc" id="L75">                return &quot;Unsupported return type  &quot; + m.getReturnType().getSimpleName() + &quot; in the method &quot; + m.getName();</span>
+            }
+
+<span class="fc bfc" id="L78" title="All 2 branches covered.">            for (Class&lt;?&gt; arg : m.getParameterTypes()) {</span>
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">                if (!isValidType(arg)) {</span>
+<span class="nc" id="L80">                    return &quot;Unsupported argument type  &quot; + arg.getSimpleName() + &quot; in the method &quot; + m.getName();</span>
+                }
+            }
+<span class="fc" id="L83">        }</span>
+
+<span class="fc" id="L85">        return null;</span>
+    }
+
+    Map&lt;String, String&gt; generate() {
+<span class="fc" id="L89">        Map&lt;String, String&gt; files = new LinkedHashMap&lt;&gt;();</span>
+        try {
+<span class="fc" id="L91">            addJavaFile(files, &quot;android&quot;, &quot;android.view.View&quot;, false);</span>
+<span class="fc" id="L92">            addJavaFile(files, &quot;javase&quot;, &quot;com.codename1.ui.PeerComponent&quot;, true);</span>
+<span class="fc" id="L93">            addJavaFile(files, &quot;rim&quot;, &quot;net.rim.device.api.ui.Field&quot;, false);</span>
+<span class="fc" id="L94">            addJavaFile(files, &quot;j2me&quot;, &quot;Object&quot;, false);</span>
+<span class="fc" id="L95">            addCSFile(files, &quot;win&quot;);</span>
+<span class="fc" id="L96">            addIOSFiles(files);</span>
+<span class="fc" id="L97">            addJavaScriptFile(files);</span>
+<span class="nc" id="L98">        } catch (IOException ex) {</span>
+<span class="nc" id="L99">            throw new UncheckedIOException(ex);</span>
+<span class="fc" id="L100">        }</span>
+<span class="fc" id="L101">        return files;</span>
+    }
+
+    private void addJavaFile(Map&lt;String, String&gt; files, String platformDir, String peerComponentType, boolean impl) throws IOException {
+<span class="fc" id="L105">        String pkg = nativeInterface.getPackage().getName();</span>
+<span class="fc" id="L106">        String className = nativeInterface.getSimpleName() + &quot;Impl&quot;;</span>
+<span class="fc" id="L107">        StringBuilder builder = new StringBuilder(&quot;package &quot; + pkg + &quot;;\n\n&quot;);</span>
+<span class="fc" id="L108">        builder.append(&quot;public class &quot;).append(className);</span>
+<span class="fc bfc" id="L109" title="All 2 branches covered.">        builder.append(impl ? &quot; implements &quot; + nativeInterface.getName() + &quot;{\n&quot; : &quot; {\n&quot;);</span>
+
+<span class="fc bfc" id="L111" title="All 2 branches covered.">        for (Method m : declaredMethods) {</span>
+<span class="fc" id="L112">            builder.append(&quot;    public &quot;);</span>
+<span class="fc" id="L113">            Class&lt;?&gt; returnType = m.getReturnType();</span>
+<span class="pc bpc" id="L114" title="1 of 2 branches missed.">            builder.append(returnType.getName().equals(&quot;com.codename1.ui.PeerComponent&quot;) ? peerComponentType : getJavaTypeName(returnType));</span>
+<span class="fc" id="L115">            builder.append(' ').append(m.getName()).append('(');</span>
+
+<span class="fc" id="L117">            Class&lt;?&gt;[] params = m.getParameterTypes();</span>
+<span class="fc" id="L118">            builder.append(IntStream.range(0, params.length)</span>
+<span class="fc" id="L119">                    .mapToObj(i -&gt; {</span>
+<span class="fc" id="L120">                        Class&lt;?&gt; arg = params[i];</span>
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">                        String typeName = arg.getName().equals(&quot;com.codename1.ui.PeerComponent&quot;) ? peerComponentType : getJavaTypeName(arg);</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">                        return typeName + &quot; param&quot; + (i == 0 ? &quot;&quot; : Integer.toString(i));</span>
+                    })
+<span class="fc" id="L124">                    .collect(java.util.stream.Collectors.joining(&quot;, &quot;)));</span>
+<span class="fc" id="L125">            builder.append(&quot;) {\n&quot;);</span>
+
+<span class="fc" id="L127">            builder.append(&quot;        &quot;).append(defaultReturnStatement(returnType));</span>
+
+<span class="fc" id="L129">            builder.append(&quot;    }\n\n&quot;);</span>
+<span class="fc" id="L130">        }</span>
+<span class="fc" id="L131">        builder.append(&quot;}\n&quot;);</span>
+
+<span class="fc" id="L133">        String path = platformDir + &quot;/&quot; + pkg.replace('.', '/') + &quot;/&quot; + className + &quot;.java&quot;;</span>
+<span class="fc" id="L134">        files.put(path, builder.toString());</span>
+<span class="fc" id="L135">    }</span>
+
+    private void addCSFile(Map&lt;String, String&gt; files, String platformDir) throws IOException {
+<span class="fc" id="L138">        String pkg = nativeInterface.getPackage().getName();</span>
+<span class="fc" id="L139">        StringBuilder builder = new StringBuilder();</span>
+<span class="fc" id="L140">        builder.append(&quot;namespace &quot;).append(pkg).append(&quot;{\r\n\r\n&quot;);</span>
+<span class="fc" id="L141">        builder.append(&quot;public class &quot;).append(nativeInterface.getSimpleName()).append(&quot;Impl : I&quot;)</span>
+<span class="fc" id="L142">                .append(nativeInterface.getSimpleName()).append(&quot;Impl {\r\n&quot;);</span>
+
+<span class="fc bfc" id="L144" title="All 2 branches covered.">        for (Method m : declaredMethods) {</span>
+<span class="fc" id="L145">            builder.append(&quot;    public &quot;);</span>
+<span class="fc" id="L146">            builder.append(javaTypeToCSharpType(m.getReturnType()));</span>
+<span class="fc" id="L147">            builder.append(' ').append(m.getName()).append('(');</span>
+<span class="fc" id="L148">            Class&lt;?&gt;[] params = m.getParameterTypes();</span>
+<span class="fc" id="L149">            builder.append(IntStream.range(0, params.length)</span>
+<span class="fc" id="L150">                    .mapToObj(i -&gt; {</span>
+<span class="fc" id="L151">                        Class&lt;?&gt; arg = params[i];</span>
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">                        String typeName = switch (arg.getName()) {</span>
+<span class="nc" id="L153">                            case &quot;com.codename1.ui.PeerComponent&quot; -&gt; &quot;object&quot;;</span>
+<span class="fc bfc" id="L154" title="All 2 branches covered.">                            default -&gt; switch (arg) {</span>
+<span class="pc bpc" id="L155" title="3 of 6 branches missed.">                                case Class&lt;?&gt; t when t == boolean.class || t == Boolean.class || t == Boolean.TYPE -&gt; &quot;bool&quot;;</span>
+<span class="fc" id="L156">                                default -&gt; getJavaTypeName(arg);</span>
+                            };
+                        };
+<span class="fc bfc" id="L159" title="All 2 branches covered.">                        return typeName + &quot; param&quot; + (i == 0 ? &quot;&quot; : Integer.toString(i));</span>
+                    })
+<span class="fc" id="L161">                    .collect(java.util.stream.Collectors.joining(&quot;, &quot;)));</span>
+<span class="fc" id="L162">            builder.append(&quot;) {\n&quot;);</span>
+<span class="fc" id="L163">            builder.append(&quot;        &quot;).append(defaultReturnStatement(m.getReturnType()));</span>
+<span class="fc" id="L164">            builder.append(&quot;    }\n\n&quot;);</span>
+<span class="fc" id="L165">        }</span>
+<span class="fc" id="L166">        builder.append(&quot;}\r\n}\r\n&quot;);</span>
+
+<span class="fc" id="L168">        String path = platformDir + &quot;/&quot; + pkg.replace('.', '/') + &quot;/&quot; + nativeInterface.getSimpleName() + &quot;Impl.cs&quot;;</span>
+<span class="fc" id="L169">        files.put(path, builder.toString());</span>
+<span class="fc" id="L170">    }</span>
+
+    private void addIOSFiles(Map&lt;String, String&gt; files) throws IOException {
+<span class="fc" id="L173">        String prefix = nativeInterface.getName().replace('.', '_') + &quot;Impl&quot;;</span>
+<span class="fc" id="L174">        StringBuilder header = new StringBuilder();</span>
+<span class="fc" id="L175">        header.append(&quot;#import &lt;Foundation/Foundation.h&gt;\n\n&quot;);</span>
+<span class="fc" id="L176">        header.append(&quot;@interface &quot;).append(prefix).append(&quot; : NSObject {\n}\n\n&quot;);</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">        for (Method m : declaredMethods) {</span>
+<span class="fc" id="L178">            header.append(&quot;-(&quot;).append(javaTypeToObjectiveCType(m.getReturnType())).append(')').append(m.getName());</span>
+<span class="fc" id="L179">            Class&lt;?&gt;[] params = m.getParameterTypes();</span>
+<span class="fc bfc" id="L180" title="All 2 branches covered.">            if (params.length == 0) {</span>
+<span class="fc" id="L181">                header.append(&quot;;\n&quot;);</span>
+            } else {
+<span class="fc" id="L183">                header.append(&quot;:(&quot;).append(javaTypeToObjectiveCType(params[0])).append(&quot;)param&quot;);</span>
+<span class="fc bfc" id="L184" title="All 2 branches covered.">                if (params.length == 1) {</span>
+<span class="fc" id="L185">                    header.append(&quot;;\n&quot;);</span>
+                } else {
+<span class="fc bfc" id="L187" title="All 2 branches covered.">                    for (int i = 1; i &lt; params.length; i++) {</span>
+<span class="fc" id="L188">                        header.append(&quot; param&quot;).append(i).append(&quot;:(&quot;).append(javaTypeToObjectiveCType(params[i])).append(&quot;)param&quot;).append(i);</span>
+                    }
+<span class="fc" id="L190">                    header.append(&quot;;\n&quot;);</span>
+                }
+            }
+<span class="fc" id="L193">        }</span>
+<span class="fc" id="L194">        header.append(&quot;@end\n&quot;);</span>
+
+<span class="fc" id="L196">        StringBuilder impl = new StringBuilder();</span>
+<span class="fc" id="L197">        impl.append(&quot;#import \&quot;&quot;).append(prefix).append(&quot;.h\&quot;\n\n&quot;);</span>
+<span class="fc" id="L198">        impl.append(&quot;@implementation &quot;).append(prefix).append(&quot;\n\n&quot;);</span>
+
+<span class="fc bfc" id="L200" title="All 2 branches covered.">        for (Method m : declaredMethods) {</span>
+<span class="fc" id="L201">            impl.append(&quot;-(&quot;).append(javaTypeToObjectiveCType(m.getReturnType())).append(')').append(m.getName());</span>
+<span class="fc" id="L202">            Class&lt;?&gt;[] params = m.getParameterTypes();</span>
+<span class="fc bfc" id="L203" title="All 2 branches covered.">            if (params.length == 0) {</span>
+<span class="fc" id="L204">                impl.append(&quot;{\n&quot;);</span>
+            } else {
+<span class="fc" id="L206">                impl.append(&quot;:(&quot;).append(javaTypeToObjectiveCType(params[0])).append(&quot;)param&quot;);</span>
+<span class="fc bfc" id="L207" title="All 2 branches covered.">                if (params.length == 1) {</span>
+<span class="fc" id="L208">                    impl.append(&quot;{\n&quot;);</span>
+                } else {
+<span class="fc bfc" id="L210" title="All 2 branches covered.">                    for (int i = 1; i &lt; params.length; i++) {</span>
+<span class="fc" id="L211">                        impl.append(&quot; param&quot;).append(i).append(&quot;:(&quot;).append(javaTypeToObjectiveCType(params[i])).append(&quot;)param&quot;).append(i);</span>
+                    }
+<span class="fc" id="L213">                    impl.append(&quot;{\n&quot;);</span>
+                }
+            }
+<span class="fc" id="L216">            impl.append(&quot;    &quot;).append(defaultObjectiveCReturnStatement(m.getReturnType()));</span>
+<span class="fc" id="L217">            impl.append(&quot;}\n\n&quot;);</span>
+<span class="fc" id="L218">        }</span>
+<span class="fc" id="L219">        impl.append(&quot;@end\n&quot;);</span>
+
+<span class="fc" id="L221">        files.put(&quot;ios/&quot; + prefix + &quot;.h&quot;, header.toString());</span>
+<span class="fc" id="L222">        files.put(&quot;ios/&quot; + prefix + &quot;.m&quot;, impl.toString());</span>
+<span class="fc" id="L223">    }</span>
+
+    private void addJavaScriptFile(Map&lt;String, String&gt; files) throws IOException {
+<span class="fc" id="L226">        StringBuilder builder = new StringBuilder();</span>
+<span class="fc" id="L227">        builder.append(&quot;(function(exports){\n\n&quot;);</span>
+<span class="fc" id="L228">        builder.append(&quot;var o = {};\n\n&quot;);</span>
+
+<span class="fc bfc" id="L230" title="All 2 branches covered.">        for (Method m : declaredMethods) {</span>
+<span class="fc" id="L231">            builder.append(&quot;    o.&quot;).append(m.getName());</span>
+<span class="fc" id="L232">            builder.append('_');</span>
+<span class="fc bfc" id="L233" title="All 2 branches covered.">            for (Class&lt;?&gt; param : m.getParameterTypes()) {</span>
+<span class="fc" id="L234">                builder.append('_');</span>
+<span class="pc bpc" id="L235" title="1 of 2 branches missed.">                if (param.getName().equals(&quot;com.codename1.ui.PeerComponent&quot;)) {</span>
+<span class="nc" id="L236">                    builder.append(&quot;com_codename1_ui_PeerComponent&quot;);</span>
+                } else {
+<span class="fc" id="L238">                    builder.append(typeToXMLVMJavaName(param));</span>
+                }
+            }
+<span class="fc" id="L241">            builder.append(&quot; = function(&quot;);</span>
+<span class="fc" id="L242">            Class&lt;?&gt;[] params = m.getParameterTypes();</span>
+<span class="fc bfc" id="L243" title="All 2 branches covered.">            if (params.length &gt; 0) {</span>
+<span class="fc" id="L244">                builder.append(&quot;param1&quot;);</span>
+<span class="fc bfc" id="L245" title="All 2 branches covered.">                for (int i = 1; i &lt; params.length; i++) {</span>
+<span class="fc" id="L246">                    builder.append(&quot;, param&quot;).append(i + 1);</span>
+                }
+<span class="fc" id="L248">                builder.append(&quot;, callback) {\n&quot;);</span>
+            } else {
+<span class="fc" id="L250">                builder.append(&quot;callback) {\n&quot;);</span>
+            }
+
+<span class="fc" id="L253">            builder.append(&quot;        &quot;);</span>
+<span class="fc bfc" id="L254" title="All 2 branches covered.">            builder.append(m.getName().equals(&quot;isSupported&quot;) ? &quot;callback.complete(false);&quot; : &quot;callback.error(new Error(\&quot;Not implemented yet\&quot;));&quot;);</span>
+<span class="fc" id="L255">            builder.append(&quot;\n&quot;);</span>
+<span class="fc" id="L256">            builder.append(&quot;    };\n\n&quot;);</span>
+<span class="fc" id="L257">        }</span>
+<span class="fc" id="L258">        builder.append(&quot;exports.&quot;).append(nativeInterface.getName().replace('.', '_')).append(&quot;= o;\n\n&quot;);</span>
+<span class="fc" id="L259">        builder.append(&quot;})(cn1_get_native_interfaces());\n&quot;);</span>
+
+<span class="fc" id="L261">        files.put(&quot;javascript/&quot; + nativeInterface.getName().replace('.', '_') + &quot;.js&quot;, builder.toString());</span>
+<span class="fc" id="L262">    }</span>
+
+    private static boolean isSubinterfaceOfNativeInterface(Class&lt;?&gt; iface) {
+<span class="pc bpc" id="L265" title="1 of 2 branches missed.">        for (Class&lt;?&gt; current : iface.getInterfaces()) {</span>
+<span class="pc bpc" id="L266" title="1 of 2 branches missed.">            if (current.getName().equals(NATIVE_INTERFACE_FQN)) {</span>
+<span class="fc" id="L267">                return true;</span>
+            }
+<span class="nc bnc" id="L269" title="All 2 branches missed.">            if (isSubinterfaceOfNativeInterface(current)) {</span>
+<span class="nc" id="L270">                return true;</span>
+            }
+        }
+<span class="nc" id="L273">        return false;</span>
+    }
+
+    private static boolean isValidType(Class&lt;?&gt; cls) {
+<span class="fc bfc" id="L277" title="All 5 branches covered.">        return switch (cls) {</span>
+<span class="fc bfc" id="L278" title="All 2 branches covered.">            case Class&lt;?&gt; type when type.isPrimitive() -&gt; true;</span>
+<span class="pc bpc" id="L279" title="1 of 2 branches missed.">            case Class&lt;?&gt; type when type.isArray() -&gt; type.getComponentType().isPrimitive();</span>
+<span class="fc bfc" id="L280" title="All 2 branches covered.">            case Class&lt;?&gt; type when type == String.class -&gt; true;</span>
+<span class="pc bpc" id="L281" title="1 of 2 branches missed.">            case Class&lt;?&gt; type when type.getName().equals(&quot;com.codename1.ui.PeerComponent&quot;) -&gt; true;</span>
+<span class="fc" id="L282">            default -&gt; false;</span>
+        };
+    }
+
+    private static String defaultReturnStatement(Class&lt;?&gt; returnType) {
+<span class="fc bfc" id="L287" title="All 7 branches covered.">        return switch (returnType) {</span>
+<span class="pc bpc" id="L288" title="2 of 4 branches missed.">            case Class&lt;?&gt; type when type == Void.TYPE || type == Void.class -&gt; &quot;// TODO implement\n&quot;;</span>
+<span class="fc bfc" id="L289" title="All 2 branches covered.">            case Class&lt;?&gt; type when type == String.class</span>
+<span class="pc bpc" id="L290" title="1 of 2 branches missed.">                    || type.getName().equals(&quot;com.codename1.ui.PeerComponent&quot;)</span>
+<span class="pc bpc" id="L291" title="1 of 2 branches missed.">                    || type.isArray() -&gt; &quot;return null;\n&quot;;</span>
+<span class="pc bpc" id="L292" title="1 of 4 branches missed.">            case Class&lt;?&gt; type when type == Boolean.class || type == Boolean.TYPE -&gt; &quot;return false;\n&quot;;</span>
+<span class="pc bpc" id="L293" title="2 of 4 branches missed.">            case Class&lt;?&gt; type when type == Character.class || type == Character.TYPE -&gt; &quot;return (char)0;\n&quot;;</span>
+<span class="pc bpc" id="L294" title="2 of 4 branches missed.">            case Class&lt;?&gt; type when type == Byte.class || type == Byte.TYPE -&gt; &quot;return (byte)0;\n&quot;;</span>
+<span class="pc bpc" id="L295" title="2 of 4 branches missed.">            case Class&lt;?&gt; type when type == Short.class || type == Short.TYPE -&gt; &quot;return (short)0;\n&quot;;</span>
+<span class="fc" id="L296">            default -&gt; &quot;return 0;\n&quot;;</span>
+        };
+    }
+
+    private static String defaultObjectiveCReturnStatement(Class&lt;?&gt; returnType) {
+<span class="fc bfc" id="L301" title="All 5 branches covered.">        return switch (returnType) {</span>
+<span class="pc bpc" id="L302" title="2 of 4 branches missed.">            case Class&lt;?&gt; type when type == Void.TYPE || type == Void.class -&gt; &quot;// TODO implement\n&quot;;</span>
+<span class="pc bpc" id="L303" title="1 of 4 branches missed.">            case Class&lt;?&gt; type when type == String.class || type.isArray() -&gt; &quot;return nil;\n&quot;;</span>
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">            case Class&lt;?&gt; type when type.getName().equals(&quot;com.codename1.ui.PeerComponent&quot;) -&gt; &quot;return NULL;\n&quot;;</span>
+<span class="pc bpc" id="L305" title="1 of 4 branches missed.">            case Class&lt;?&gt; type when type == Boolean.class || type == Boolean.TYPE -&gt; &quot;return NO;\n&quot;;</span>
+<span class="fc" id="L306">            default -&gt; &quot;return 0;\n&quot;;</span>
+        };
+    }
+
+    private static String getJavaTypeName(Class&lt;?&gt; type) {
+<span class="pc bpc" id="L311" title="1 of 2 branches missed.">        if (type.isArray()) {</span>
+<span class="nc" id="L312">            return getJavaTypeName(type.getComponentType()) + &quot;[]&quot;;</span>
+        }
+<span class="fc" id="L314">        return type.getSimpleName();</span>
+    }
+
+    private static String javaTypeToObjectiveCType(Class&lt;?&gt; type) {
+<span class="pc bpc" id="L318" title="4 of 12 branches missed.">        return switch (type) {</span>
+<span class="fc bfc" id="L319" title="All 2 branches covered.">            case Class&lt;?&gt; t when t == String.class -&gt; &quot;NSString*&quot;;</span>
+<span class="pc bpc" id="L320" title="1 of 2 branches missed.">            case Class&lt;?&gt; t when t.isArray() -&gt; &quot;NSData*&quot;;</span>
+<span class="pc bpc" id="L321" title="1 of 4 branches missed.">            case Class&lt;?&gt; t when t == Integer.class || t == Integer.TYPE -&gt; &quot;int&quot;;</span>
+<span class="pc bpc" id="L322" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Long.class || t == Long.TYPE -&gt; &quot;long long&quot;;</span>
+<span class="pc bpc" id="L323" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Byte.class || t == Byte.TYPE -&gt; &quot;char&quot;;</span>
+<span class="pc bpc" id="L324" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Short.class || t == Short.TYPE -&gt; &quot;short&quot;;</span>
+<span class="pc bpc" id="L325" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Character.class || t == Character.TYPE -&gt; &quot;int&quot;;</span>
+<span class="pc bpc" id="L326" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Boolean.class || t == Boolean.TYPE -&gt; &quot;BOOL&quot;;</span>
+<span class="nc bnc" id="L327" title="All 4 branches missed.">            case Class&lt;?&gt; t when t == Float.class || t == Float.TYPE -&gt; &quot;float&quot;;</span>
+<span class="nc bnc" id="L328" title="All 4 branches missed.">            case Class&lt;?&gt; t when t == Double.class || t == Double.TYPE -&gt; &quot;double&quot;;</span>
+<span class="nc bnc" id="L329" title="All 4 branches missed.">            case Class&lt;?&gt; t when t == Void.class || t == Void.TYPE -&gt; &quot;void&quot;;</span>
+<span class="nc" id="L330">            default -&gt; &quot;void*&quot;;</span>
+        };
+    }
+
+    private static String javaTypeToCSharpType(Class&lt;?&gt; type) {
+<span class="pc bpc" id="L335" title="5 of 13 branches missed.">        return switch (type) {</span>
+<span class="pc bpc" id="L336" title="1 of 2 branches missed.">            case Class&lt;?&gt; t when t.getName().equals(&quot;com.codename1.ui.PeerComponent&quot;) -&gt; &quot;object&quot;;</span>
+<span class="fc bfc" id="L337" title="All 2 branches covered.">            case Class&lt;?&gt; t when t == String.class -&gt; &quot;string&quot;;</span>
+<span class="pc bpc" id="L338" title="1 of 2 branches missed.">            case Class&lt;?&gt; t when t.isArray() -&gt; javaTypeToCSharpType(t.getComponentType()) + &quot;[]&quot;;</span>
+<span class="pc bpc" id="L339" title="1 of 4 branches missed.">            case Class&lt;?&gt; t when t == Boolean.class || t == Boolean.TYPE -&gt; &quot;bool&quot;;</span>
+<span class="pc bpc" id="L340" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Character.class || t == Character.TYPE -&gt; &quot;char&quot;;</span>
+<span class="pc bpc" id="L341" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Byte.class || t == Byte.TYPE -&gt; &quot;byte&quot;;</span>
+<span class="pc bpc" id="L342" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Short.class || t == Short.TYPE -&gt; &quot;short&quot;;</span>
+<span class="pc bpc" id="L343" title="2 of 4 branches missed.">            case Class&lt;?&gt; t when t == Integer.class || t == Integer.TYPE -&gt; &quot;int&quot;;</span>
+<span class="nc bnc" id="L344" title="All 4 branches missed.">            case Class&lt;?&gt; t when t == Long.class || t == Long.TYPE -&gt; &quot;long&quot;;</span>
+<span class="nc bnc" id="L345" title="All 4 branches missed.">            case Class&lt;?&gt; t when t == Float.class || t == Float.TYPE -&gt; &quot;float&quot;;</span>
+<span class="nc bnc" id="L346" title="All 4 branches missed.">            case Class&lt;?&gt; t when t == Double.class || t == Double.TYPE -&gt; &quot;double&quot;;</span>
+<span class="nc bnc" id="L347" title="All 4 branches missed.">            case Class&lt;?&gt; t when t == Void.class || t == Void.TYPE -&gt; &quot;void&quot;;</span>
+<span class="nc" id="L348">            default -&gt; type.getSimpleName();</span>
+        };
+    }
+
+    private static String typeToXMLVMJavaName(Class&lt;?&gt; type) {
+<span class="pc bpc" id="L353" title="1 of 2 branches missed.">        return type.isArray()</span>
+<span class="nc" id="L354">                ? getSimpleNameWithJavaLang(type.getComponentType()).replace('.', '_') + &quot;_1ARRAY&quot;</span>
+<span class="fc" id="L355">                : getSimpleNameWithJavaLang(type).replace('.', '_');</span>
+    }
+
+    private static String getSimpleNameWithJavaLang(Class&lt;?&gt; c) {
+<span class="pc bpc" id="L359" title="1 of 4 branches missed.">        return switch (c) {</span>
+<span class="fc bfc" id="L360" title="All 2 branches covered.">            case Class&lt;?&gt; type when type.isPrimitive() -&gt; type.getSimpleName();</span>
+<span class="pc bpc" id="L361" title="1 of 2 branches missed.">            case Class&lt;?&gt; type when type.isArray() -&gt; getSimpleNameWithJavaLang(type.getComponentType()) + &quot;[]&quot;;</span>
+<span class="pc bpc" id="L362" title="1 of 2 branches missed.">            case Class&lt;?&gt; type when type.getName().startsWith(&quot;java.lang.&quot;) -&gt; type.getName();</span>
+<span class="nc" id="L363">            default -&gt; c.getSimpleName();</span>
+        };
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>
