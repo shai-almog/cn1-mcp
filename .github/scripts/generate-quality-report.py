@@ -6,10 +6,20 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_DIR = ROOT / "target"
 REPORT_PATH = ROOT / "quality-report.md"
+SOURCE_BASES = [
+    Path("src/main/java"),
+    Path("src/test/java"),
+    Path("src/main/resources"),
+    Path("src/test/resources"),
+    Path("src/main/kotlin"),
+    Path("src/test/kotlin"),
+    Path("target/generated-sources"),
+]
 
 
 @dataclass
@@ -18,10 +28,23 @@ class Finding:
     location: str
     message: str
     rule: Optional[str] = None
+    path: Optional[str] = None
+    line: Optional[int] = None
+    column: Optional[int] = None
 
-    def to_markdown(self) -> str:
+    def to_markdown(self, blob_base: Optional[str]) -> str:
+        link_target: Optional[str] = None
+        if blob_base and self.path:
+            path = quote(self.path, safe="/+")
+            anchor = ""
+            if self.line:
+                anchor = f"#L{self.line}"
+            link_target = f"{blob_base}/{path}{anchor}"
+        location_display = f"`{self.location}`"
+        if link_target:
+            location_display = f"[`{self.location}`]({link_target})"
         rule_suffix = f" _(rule: `{self.rule}`)_" if self.rule else ""
-        return f"{self.severity}: `{self.location}` – {self.message}{rule_suffix}"
+        return f"{self.severity}: {location_display} – {self.message}{rule_suffix}"
 
 
 @dataclass
@@ -36,13 +59,52 @@ def _clean_message(value: Optional[str]) -> str:
     return " ".join(value.split())
 
 
+def _safe_int(value: Optional[str]) -> Optional[int]:
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _relative_path(raw_path: Optional[str]) -> str:
     if not raw_path:
         return "Unknown location"
-    try:
-        return str(Path(raw_path).resolve().relative_to(ROOT))
-    except ValueError:
-        return raw_path.replace("\\", "/")
+    normalized = raw_path.replace("\\", "/")
+    candidate = Path(normalized)
+    potential: List[str] = []
+    if candidate.is_absolute():
+        try:
+            rel_candidate = candidate.resolve().relative_to(ROOT)
+            rel_str = str(rel_candidate)
+            if (ROOT / rel_candidate).exists():
+                return rel_str
+            potential.append(rel_str)
+        except ValueError:
+            potential.append(normalized)
+    else:
+        resolved = (ROOT / candidate).resolve()
+        try:
+            rel_candidate = resolved.relative_to(ROOT)
+            rel_str = str(rel_candidate)
+            if (ROOT / rel_candidate).exists():
+                return rel_str
+            potential.append(rel_str)
+        except ValueError:
+            potential.append(candidate.as_posix())
+    for base in SOURCE_BASES:
+        alt = base / candidate
+        alt_abs = (ROOT / alt).resolve()
+        try:
+            rel_alt = alt_abs.relative_to(ROOT)
+        except ValueError:
+            continue
+        rel_str = str(rel_alt)
+        if (ROOT / rel_alt).exists():
+            return rel_str
+        potential.append(rel_str)
+    return potential[0] if potential else normalized
 
 
 def parse_surefire() -> Optional[Dict[str, int]]:
@@ -124,8 +186,9 @@ def parse_spotbugs() -> Optional[AnalysisReport]:
             else:
                 source_path = None
                 line = None
-            if source_path:
-                location = _relative_path(source_path)
+            path_rel = _relative_path(source_path) if source_path else None
+            if path_rel:
+                location = path_rel
                 if line:
                     location = f"{location}:{line}"
             else:
@@ -140,6 +203,8 @@ def parse_spotbugs() -> Optional[AnalysisReport]:
                     location=location,
                     message=message or bug_type or "Issue detected",
                     rule=bug_type,
+                    path=path_rel,
+                    line=_safe_int(line),
                 )
             )
     else:
@@ -164,7 +229,8 @@ def parse_spotbugs() -> Optional[AnalysisReport]:
                 )
                 bug_type = bug.attrib.get("type")
                 line = bug.attrib.get("lineNumber")
-                location_base = _relative_path(source_path) if source_path else class_name or "Unknown"
+                path_rel = _relative_path(source_path) if source_path else None
+                location_base = path_rel or class_name or "Unknown"
                 if line:
                     location = f"{location_base}:{line}"
                 else:
@@ -175,6 +241,8 @@ def parse_spotbugs() -> Optional[AnalysisReport]:
                         location=location,
                         message=message or bug_type or "Issue detected",
                         rule=bug_type,
+                        path=path_rel,
+                        line=_safe_int(line),
                     )
                 )
     if not findings:
@@ -198,13 +266,15 @@ def parse_pmd() -> Optional[AnalysisReport]:
         if not file_elem.tag.endswith("file"):
             continue
         file_path = file_elem.attrib.get("name")
+        path_rel = _relative_path(file_path) if file_path else None
         for violation in file_elem.iter():
             if not violation.tag.endswith("violation"):
                 continue
             priority = violation.attrib.get("priority", "5")
             priority_counts[priority] = priority_counts.get(priority, 0) + 1
-            location = _relative_path(file_path)
+            location = path_rel or "Unknown location"
             begin_line = violation.attrib.get("beginline") or violation.attrib.get("line")
+            begin_line_int = _safe_int(begin_line)
             if begin_line:
                 location = f"{location}:{begin_line}"
             rule = violation.attrib.get("rule") or violation.attrib.get("ruleset")
@@ -215,6 +285,8 @@ def parse_pmd() -> Optional[AnalysisReport]:
                     location=location,
                     message=message or "Violation detected",
                     rule=rule,
+                    path=path_rel,
+                    line=begin_line_int,
                 )
             )
     findings = [finding for finding in findings if finding.message]
@@ -236,6 +308,7 @@ def parse_checkstyle() -> Optional[AnalysisReport]:
     findings: List[Finding] = []
     for file_elem in root.findall("file"):
         file_path = file_elem.attrib.get("name")
+        path_rel = _relative_path(file_path) if file_path else None
         for error in file_elem.findall("error"):
             severity = error.attrib.get("severity", "warning").lower()
             if severity in severities:
@@ -246,7 +319,9 @@ def parse_checkstyle() -> Optional[AnalysisReport]:
             source = error.attrib.get("source")
             line = error.attrib.get("line")
             column = error.attrib.get("column")
-            location = _relative_path(file_path)
+            location = path_rel or "Unknown location"
+            line_int = _safe_int(line)
+            column_int = _safe_int(column)
             if line:
                 location = f"{location}:{line}"
                 if column:
@@ -257,6 +332,9 @@ def parse_checkstyle() -> Optional[AnalysisReport]:
                     location=location,
                     message=message or "Checkstyle violation",
                     rule=source.split(".")[-1] if source else None,
+                    path=path_rel,
+                    line=line_int,
+                    column=column_int,
                 )
             )
     findings = [finding for finding in findings if finding.message]
@@ -284,7 +362,9 @@ def format_coverage(coverage: Optional[float]) -> str:
     return f"- 📊 **Line coverage:** {coverage:.2f}%"
 
 
-def format_spotbugs(data: Optional[AnalysisReport], artifact_url: Optional[str]) -> List[str]:
+def format_spotbugs(
+    data: Optional[AnalysisReport], artifact_url: Optional[str], blob_base: Optional[str]
+) -> List[str]:
     if not data:
         return ["- ⚠️ SpotBugs report not generated."]
     total = sum(data.totals.values())
@@ -293,20 +373,22 @@ def format_spotbugs(data: Optional[AnalysisReport], artifact_url: Optional[str])
         f"{sev}: {count}" for sev, count in data.totals.items() if count > 0
     )
     breakdown = breakdown or "no issues"
-    link_suffix = f" [[Full report]]({artifact_url})" if artifact_url else ""
+    link_suffix = (
+        f" [[Download reports]]({artifact_url})" if artifact_url else ""
+    )
     lines = [f"- {status} **SpotBugs:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
     if highlights:
-        lines.append("  <details>")
-        lines.append("  <summary>Top findings</summary>")
-        lines.extend(f"  - {finding.to_markdown()}" for finding in highlights)
+        lines.append("  - **Top findings**")
+        lines.extend(f"    - {finding.to_markdown(blob_base)}" for finding in highlights)
         if total > len(highlights):
-            lines.append(f"  - …and {total - len(highlights)} more")
-        lines.append("  </details>")
+            lines.append(f"    - …and {total - len(highlights)} more")
     return lines
 
 
-def format_pmd(data: Optional[AnalysisReport], artifact_url: Optional[str]) -> List[str]:
+def format_pmd(
+    data: Optional[AnalysisReport], artifact_url: Optional[str], blob_base: Optional[str]
+) -> List[str]:
     if not data:
         return ["- ⚠️ PMD report not generated."]
     total = sum(data.totals.values())
@@ -315,20 +397,22 @@ def format_pmd(data: Optional[AnalysisReport], artifact_url: Optional[str]) -> L
         f"P{priority}: {count}" for priority, count in sorted(data.totals.items()) if count > 0
     )
     breakdown = breakdown or "no issues"
-    link_suffix = f" [[Full report]]({artifact_url})" if artifact_url else ""
+    link_suffix = (
+        f" [[Download reports]]({artifact_url})" if artifact_url else ""
+    )
     lines = [f"- {status} **PMD:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
     if highlights:
-        lines.append("  <details>")
-        lines.append("  <summary>Top findings</summary>")
-        lines.extend(f"  - {finding.to_markdown()}" for finding in highlights)
+        lines.append("  - **Top findings**")
+        lines.extend(f"    - {finding.to_markdown(blob_base)}" for finding in highlights)
         if total > len(highlights):
-            lines.append(f"  - …and {total - len(highlights)} more")
-        lines.append("  </details>")
+            lines.append(f"    - …and {total - len(highlights)} more")
     return lines
 
 
-def format_checkstyle(data: Optional[AnalysisReport], artifact_url: Optional[str]) -> List[str]:
+def format_checkstyle(
+    data: Optional[AnalysisReport], artifact_url: Optional[str], blob_base: Optional[str]
+) -> List[str]:
     if not data:
         return ["- ⚠️ Checkstyle report not generated."]
     total = sum(data.totals.values())
@@ -337,16 +421,16 @@ def format_checkstyle(data: Optional[AnalysisReport], artifact_url: Optional[str
         f"{severity.title()}: {count}" for severity, count in data.totals.items() if count > 0
     )
     breakdown = breakdown or "no issues"
-    link_suffix = f" [[Full report]]({artifact_url})" if artifact_url else ""
+    link_suffix = (
+        f" [[Download reports]]({artifact_url})" if artifact_url else ""
+    )
     lines = [f"- {status} **Checkstyle:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
     if highlights:
-        lines.append("  <details>")
-        lines.append("  <summary>Top findings</summary>")
-        lines.extend(f"  - {finding.to_markdown()}" for finding in highlights)
+        lines.append("  - **Top findings**")
+        lines.extend(f"    - {finding.to_markdown(blob_base)}" for finding in highlights)
         if total > len(highlights):
-            lines.append(f"  - …and {total - len(highlights)} more")
-        lines.append("  </details>")
+            lines.append(f"    - …and {total - len(highlights)} more")
     return lines
 
 
@@ -356,6 +440,17 @@ def build_report(artifact_url: Optional[str]) -> str:
     spotbugs = parse_spotbugs()
     pmd = parse_pmd()
     checkstyle = parse_checkstyle()
+
+    server_url = os.environ.get("QUALITY_REPORT_SERVER_URL") or os.environ.get(
+        "GITHUB_SERVER_URL", "https://github.com"
+    )
+    repository = os.environ.get("QUALITY_REPORT_REPOSITORY") or os.environ.get(
+        "GITHUB_REPOSITORY"
+    )
+    ref = os.environ.get("QUALITY_REPORT_REF") or os.environ.get("GITHUB_SHA")
+    blob_base: Optional[str] = None
+    if repository and ref:
+        blob_base = f"{server_url.rstrip('/')}/{repository}/blob/{ref}"
 
     lines = [
         "## ✅ Continuous Quality Report",
@@ -367,9 +462,9 @@ def build_report(artifact_url: Optional[str]) -> str:
         "### Static Analysis",
     ]
     for block in (
-        format_spotbugs(spotbugs, artifact_url),
-        format_pmd(pmd, artifact_url),
-        format_checkstyle(checkstyle, artifact_url),
+        format_spotbugs(spotbugs, artifact_url, blob_base),
+        format_pmd(pmd, artifact_url, blob_base),
+        format_checkstyle(checkstyle, artifact_url, blob_base),
     ):
         lines.extend(block)
     lines.extend(

@@ -60,6 +60,9 @@ jobs:
       - name: Generate quality report
         env:
           STATIC_ANALYSIS_ARTIFACT_URL: ${{ steps.upload-static-analysis.outputs.artifact-url }}
+          QUALITY_REPORT_SERVER_URL: ${{ github.server_url }}
+          QUALITY_REPORT_REPOSITORY: ${{ github.repository }}
+          QUALITY_REPORT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 .github/scripts/generate-quality-report.py
 
       - name: Upload quality report artifact
