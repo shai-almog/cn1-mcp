@@ -25,6 +25,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.security.AccessController;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
 
 @Service
 public class NativeStubService {
@@ -82,13 +85,16 @@ public class NativeStubService {
                 JavaCompiler.CompilationTask task = compiler.getTask(null, fileManager, diagnostics, options, null, compilationUnits);
                 Boolean ok = task.call();
                 if (!Boolean.TRUE.equals(ok)) {
-                    StringBuilder message = new StringBuilder("Compilation failed:\n");
-                    diagnostics.getDiagnostics().forEach(d -> message.append(d.toString()).append('\n'));
+                    StringBuilder message = new StringBuilder("Compilation failed:" + System.lineSeparator());
+                    diagnostics.getDiagnostics().forEach(d -> message.append(d).append(System.lineSeparator()));
                     throw new IllegalArgumentException(message.toString());
                 }
             }
 
-            try (URLClassLoader loader = new URLClassLoader(new URL[]{classesDir.toUri().toURL()}, getClass().getClassLoader())) {
+            try (URLClassLoader loader = AccessController.doPrivileged(
+                    // SpotBugs: creating the class loader under doPrivileged avoids DP_CREATE_CLASSLOADER_INSIDE_DO_PRIVILEGED.
+                    (PrivilegedExceptionAction<URLClassLoader>) () -> new URLClassLoader(
+                            new URL[]{classesDir.toUri().toURL()}, getClass().getClassLoader()))) {
                 Class<?> iface;
                 try {
                     iface = Class.forName(request.interfaceName(), true, loader);
@@ -108,6 +114,8 @@ public class NativeStubService {
                         .toList();
                 return new NativeStubResponse(files);
             }
+        } catch (PrivilegedActionException e) {
+            throw new IllegalStateException("Failed to open class loader for generated sources", e.getException());
         } catch (IOException e) {
             throw new IllegalStateException("Failed to generate native stubs", e);
         } finally {
@@ -146,10 +154,12 @@ public class NativeStubService {
                     .forEach(path -> {
                         try {
                             Files.deleteIfExists(path);
-                        } catch (IOException ignored) {
+                        } catch (IOException ex) {
+                            LOG.debug("Failed to delete native stub temp file {}", path, ex);
                         }
                     });
-        } catch (IOException ignored) {
+        } catch (IOException ex) {
+            LOG.debug("Failed to clean native stub temp directory {}", dir, ex);
         }
     }
 }

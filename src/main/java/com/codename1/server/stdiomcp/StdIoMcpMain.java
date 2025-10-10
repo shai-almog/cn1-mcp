@@ -76,7 +76,7 @@ public class StdIoMcpMain {
                     try {
                         req = mapper.readValue(line, RpcReq.class);
                         LOG.debug("Received request id={} method={} params={}", req.id, req.method, req.params);
-                    } catch (Exception e) {
+                    } catch (IOException | RuntimeException e) {
                         LOG.warn("Failed to parse incoming payload: {}", line, e);
                         writeJson(out, mapper, new RpcErr("2.0", null, Map.of(
                                 "code", -32700, "message", "Parse error")));
@@ -331,7 +331,7 @@ public class StdIoMcpMain {
                                         "code", -32601, "message", "Method not found: " + req.method)));
                             }
                         }
-                    } catch (Exception ex) {
+                    } catch (IOException | RuntimeException ex) {
                         LOG.error("Error processing request id={}", req.id, ex);
                         writeJson(out, mapper, new RpcErr("2.0", req.id, Map.of(
                                 "code", -32000, "message", ex.toString())));

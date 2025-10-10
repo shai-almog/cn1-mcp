@@ -63,7 +63,13 @@ public class SnippetService {
                 try {
                     return a.getURL().toString().compareTo(b.getURL().toString());
                 } catch (IOException e) {
-                    return a.getFilename().compareTo(b.getFilename());
+                    String aName = a.getFilename();
+                    String bName = b.getFilename();
+                    if (aName == null || bName == null) {
+                        // SpotBugs: fall back to stable ordering even when filenames are missing.
+                        return Integer.compare(System.identityHashCode(a), System.identityHashCode(b));
+                    }
+                    return aName.compareTo(bName);
                 }
             });
 

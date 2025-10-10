@@ -19,11 +19,15 @@ import java.util.regex.Pattern;
 public class LintService {
     private static final Logger LOG = LoggerFactory.getLogger(LintService.class);
     public LintResponse lint(LintRequest req) {
-        var code = req.code();
+        String code = req.code();
+        if (code == null) {
+            // SpotBugs: requests may omit the code payload, so treat it as empty to avoid NPEs.
+            code = "";
+        }
         var diags = new ArrayList<LintDiag>();
         var fixes = new ArrayList<QuickFix>();
 
-        LOG.info("Running lint for language={} codeSize={}", req.language(), code == null ? 0 : code.length());
+        LOG.info("Running lint for language={} codeSize={}", req.language(), code.length());
 
         // 1) Forbidden imports
         var lines = code.split("\\R");
@@ -87,7 +91,10 @@ public class LintService {
                             "Forbidden import: " + q, new Range(new Range.Pos(1,1), new Range.Pos(1,1))));
                 }
             });
-        } catch (Exception ignored) { /* keep lint robust */ }
+        } catch (Exception ex) {
+            // SpotBugs: parsing failures are expected on malformed sources; log and continue linting.
+            LOG.debug("AST parse failed, continuing lint", ex);
+        }
 
         LintResponse response = new LintResponse(diags.isEmpty(), diags, fixes);
         LOG.info("Lint finished: ok={} diagnostics={} quickFixes={}", response.ok(), response.diagnostics().size(), response.quickFixes().size());

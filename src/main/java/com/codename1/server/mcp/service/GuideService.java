@@ -1,5 +1,6 @@
 package com.codename1.server.mcp.service;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
@@ -29,6 +30,7 @@ public class GuideService {
     private final List<GuideDoc> guides;
     private final Map<String, GuideDoc> guidesById;
 
+    @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "Fail fast when bundled guides cannot be enumerated")
     public GuideService(ResourcePatternResolver resolver) {
         List<GuideDoc> discovered = new ArrayList<>();
         try {
@@ -61,6 +63,7 @@ public class GuideService {
         LOG.info("Discovered {} bundled guide(s)", this.guides.size());
     }
 
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "Guides list is created as an unmodifiable snapshot")
     public List<GuideDoc> listGuides() {
         return guides;
     }

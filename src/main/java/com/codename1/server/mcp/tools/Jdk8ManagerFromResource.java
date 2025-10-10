@@ -136,6 +136,11 @@ public class Jdk8ManagerFromResource {
     }
 
     private static String fileName(String url) throws MalformedURLException {
-        return Path.of(new URL(url).getPath()).getFileName().toString();
+        Path fileName = Path.of(new URL(url).getPath()).getFileName();
+        if (fileName == null) {
+            // SpotBugs: guard against URLs that end with a trailing slash and would otherwise trigger an NPE.
+            throw new MalformedURLException("URL does not contain a file name: " + url);
+        }
+        return fileName.toString();
     }
 }
