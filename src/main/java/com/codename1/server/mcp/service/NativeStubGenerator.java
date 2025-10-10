@@ -1,5 +1,6 @@
 package com.codename1.server.mcp.service;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
@@ -25,6 +26,7 @@ class NativeStubGenerator {
     private final Class<?> nativeInterface;
     private final List<Method> declaredMethods;
 
+    @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "Reflection failures should surface to the caller")
     NativeStubGenerator(Class<?> nativeInterface) {
         this.nativeInterface = nativeInterface;
         this.declaredMethods = Arrays.stream(nativeInterface.getMethods())

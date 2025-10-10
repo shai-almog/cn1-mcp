@@ -24,6 +24,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -41,7 +42,7 @@ public class CssCompileService {
     private final Jdk8ManagerFromResource jdk8;
 
     private final Lock fontStubLock = new ReentrantLock();
-    private volatile byte[] fontStub;
+    private final AtomicReference<byte[]> fontStub = new AtomicReference<>();
 
     public CssCompileService(GlobalExtractor extractor, Jdk8ManagerFromResource jdk8) {
         this.extractor = extractor;
@@ -58,7 +59,7 @@ public class CssCompileService {
             Path cssInput = null;
             List<Path> cssFiles = new ArrayList<>();
             try {
-                List<FileEntry> files = request.files() == null ? List.of() : request.files();
+                List<FileEntry> files = request.files() == null ? List.of() : List.copyOf(request.files());
                 for (FileEntry entry : files) {
                     Path resolved = safeResolve(workDir, entry.path());
                     Path parent = resolved.getParent();
@@ -132,8 +133,12 @@ public class CssCompileService {
             } finally {
                 cleanup(workDir);
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             LOG.error("CSS compile failed", e);
+            return new CssCompileResponse(false, e.toString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.error("CSS compile interrupted", e);
             return new CssCompileResponse(false, e.toString());
         }
     }
@@ -192,22 +197,24 @@ public class CssCompileService {
     }
 
     private byte[] loadFontStub(Path designerJar) throws IOException {
-        byte[] cached = fontStub;
+        byte[] cached = fontStub.get();
         if (cached != null) {
             return cached;
         }
         fontStubLock.lock();
         try {
-            if (fontStub != null) {
-                return fontStub;
+            byte[] existing = fontStub.get();
+            if (existing != null) {
+                return existing;
             }
             try (InputStream in = Files.newInputStream(designerJar);
                  ZipInputStream zip = new ZipInputStream(in)) {
                 ZipEntry entry;
                 while ((entry = zip.getNextEntry()) != null) {
                     if (!entry.isDirectory() && entry.getName().equals("com/codename1/impl/javase/Roboto-Regular.ttf")) {
-                        fontStub = zip.readAllBytes();
-                        return fontStub;
+                        byte[] data = zip.readAllBytes();
+                        fontStub.set(data);
+                        return data;
                     }
                 }
             }
@@ -223,9 +230,16 @@ public class CssCompileService {
             Files.walk(dir)
                     .sorted((a, b) -> b.compareTo(a))
                     .forEach(path -> {
-                        try { Files.deleteIfExists(path); } catch (IOException ignored) {}
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException ex) {
+                            // SpotBugs: log cleanup issues instead of silently swallowing them.
+                            LOG.debug("Failed to delete temporary path {}", path, ex);
+                        }
                     });
-        } catch (IOException ignored) {
+        } catch (IOException ex) {
+            // SpotBugs: deletion failures should be visible during troubleshooting but not fatal.
+            LOG.debug("Failed to walk temporary directory {}", dir, ex);
         }
     }
 }

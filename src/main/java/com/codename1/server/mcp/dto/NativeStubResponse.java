@@ -6,4 +6,8 @@ import java.util.List;
  * Response payload containing the generated native stub source files.
  */
 public record NativeStubResponse(List<FileEntry> files) {
+    public NativeStubResponse {
+        // SpotBugs: respond with an immutable view of generated files.
+        files = files == null ? null : List.copyOf(files);
+    }
 }

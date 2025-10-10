@@ -15,6 +15,7 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -37,7 +38,7 @@ public class GlobalExtractor {
 
     /** Make overridable for tests. */
     protected byte[] readResource(String path) throws IOException {
-        try (InputStream in = getClass().getResourceAsStream(path)) {
+        try (InputStream in = GlobalExtractor.class.getResourceAsStream(path)) {
             if (in == null) throw new FileNotFoundException("Resource not found: " + path);
             return in.readAllBytes();
         }
@@ -50,7 +51,11 @@ public class GlobalExtractor {
         Path base = cacheDir.resolve("libs").resolve(versionTag + "-" + hash);
         Files.createDirectories(base);
 
-        Path out = base.resolve(Path.of(resourcePath).getFileName().toString());
+        Path fileName = Path.of(resourcePath).getFileName();
+        if (fileName == null) {
+            throw new IOException("Resource path has no filename: " + resourcePath);
+        }
+        Path out = base.resolve(fileName.toString());
         if (Files.exists(out)) {
             LOG.debug("Resource {} already extracted at {}", resourcePath, out);
             return out;
@@ -106,30 +111,30 @@ public class GlobalExtractor {
                  FileLock ignored = ch.lock()) {
                 if (Files.exists(destRoot)) return destRoot;
 
-            Path archivePath = parent.resolve("archive" + type.extension);
-            if (!Files.exists(archivePath)) {
-                Path tmpArchive = Files.createTempFile(parent, "download-", type.extension);
-                try (InputStream in = supplier.get();
-                     OutputStream out = Files.newOutputStream(tmpArchive, StandardOpenOption.TRUNCATE_EXISTING)) {
-                    if (in == null) throw new IOException("Archive supplier returned null stream for " + identifier);
-                    in.transferTo(out);
+                Path archivePath = parent.resolve("archive" + type.extension);
+                if (!Files.exists(archivePath)) {
+                    Path tmpArchive = Files.createTempFile(parent, "download-", type.extension);
+                    try (InputStream in = supplier.get();
+                         OutputStream out = Files.newOutputStream(tmpArchive, StandardOpenOption.TRUNCATE_EXISTING)) {
+                        if (in == null) throw new IOException("Archive supplier returned null stream for " + identifier);
+                        in.transferTo(out);
+                    }
+                    Files.move(tmpArchive, archivePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                    LOG.info("Fetched archive {} into {}", identifier, archivePath);
                 }
-                Files.move(tmpArchive, archivePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                LOG.info("Fetched archive {} into {}", identifier, archivePath);
-            }
 
-            Path tmpRoot = Files.createTempDirectory(parent, "tmp-extract-");
-            boolean success = false;
-            try {
-                extractArchive(archivePath, type, tmpRoot);
-                Files.move(tmpRoot, destRoot, StandardCopyOption.ATOMIC_MOVE);
-                LOG.info("Extracted archive {} to {}", identifier, destRoot);
-                success = true;
-            } finally {
-                if (!success) {
-                    cleanupDirectory(tmpRoot);
+                Path tmpRoot = Files.createTempDirectory(parent, "tmp-extract-");
+                boolean success = false;
+                try {
+                    extractArchive(archivePath, type, tmpRoot);
+                    Files.move(tmpRoot, destRoot, StandardCopyOption.ATOMIC_MOVE);
+                    LOG.info("Extracted archive {} to {}", identifier, destRoot);
+                    success = true;
+                } finally {
+                    if (!success) {
+                        cleanupDirectory(tmpRoot);
+                    }
                 }
-            }
             }
         } finally {
             local.unlock();
@@ -156,7 +161,10 @@ public class GlobalExtractor {
                 if (e.isDirectory()) {
                     Files.createDirectories(out);
                 } else {
-                    Files.createDirectories(out.getParent());
+                    Path parent = out.getParent();
+                    if (parent != null) {
+                        Files.createDirectories(parent);
+                    }
                     try (OutputStream os = Files.newOutputStream(out)) {
                         tar.transferTo(os);
                     }
@@ -176,7 +184,10 @@ public class GlobalExtractor {
                 if (entry.isDirectory()) {
                     Files.createDirectories(out);
                 } else {
-                    Files.createDirectories(out.getParent());
+                    Path parent = out.getParent();
+                    if (parent != null) {
+                        Files.createDirectories(parent);
+                    }
                     try (OutputStream os = Files.newOutputStream(out)) {
                         zip.transferTo(os);
                     }
@@ -219,9 +230,15 @@ public class GlobalExtractor {
             Files.walk(dir)
                     .sorted(Comparator.reverseOrder())
                     .forEach(path -> {
-                        try { Files.deleteIfExists(path); } catch (IOException ignored) {}
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException ex) {
+                            // SpotBugs: log cleanup failures for troubleshooting while keeping cleanup best-effort.
+                            LOG.debug("Failed to delete cached artifact {}", path, ex);
+                        }
                     });
-        } catch (IOException ignored) {
+        } catch (IOException ex) {
+            LOG.debug("Failed to walk cache directory {}", dir, ex);
         }
     }
 
@@ -240,7 +257,7 @@ public class GlobalExtractor {
         }
 
         static ArchiveType fromName(String name) {
-            String lower = name.toLowerCase();
+            String lower = name.toLowerCase(Locale.ROOT);
             if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) return TAR_GZ;
             if (lower.endsWith(".zip")) return ZIP;
             throw new IllegalArgumentException("Unsupported archive type: " + name);

@@ -23,6 +23,7 @@ import com.codename1.server.mcp.service.LintService;
 import com.codename1.server.mcp.service.NativeStubService;
 import com.codename1.server.mcp.service.ScaffoldService;
 import com.codename1.server.mcp.service.SnippetService;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -39,6 +40,7 @@ public class ToolsController {
     private final SnippetService snippets;
     private final NativeStubService nativeStubs;
 
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "Spring injects singleton services; controller keeps shared references intentionally.")
     public ToolsController(LintService l, ExternalCompileService c, CssCompileService css, ScaffoldService s, SnippetService sn, NativeStubService ns) {
         this.lint = l;
         this.compile = c;
@@ -88,9 +90,14 @@ public class ToolsController {
     // Auto-fix can be naive: rewrap UI mutations; expand as needed
     @PostMapping(value="/cn1_auto_fix", consumes=MediaType.APPLICATION_JSON_VALUE)
     public AutoFixResponse autoFix(@RequestBody AutoFixRequest req) {
-        String patched = req.code().replace("form.show();",
+        String source = req.code();
+        if (source == null) {
+            // SpotBugs: HTTP clients may omit the code payload; use an empty string instead of risking NPEs.
+            source = "";
+        }
+        String patched = source.replace("form.show();",
                 "com.codename1.ui.Display.getInstance().callSerially(() -> { form.show(); });");
-        LOG.info("HTTP auto-fix request received ({} chars)", req.code() != null ? req.code().length() : 0);
+        LOG.info("HTTP auto-fix request received ({} chars)", source.length());
         var patch = new Patch("Wrap show() in EDT", """
       @@
       - form.show();

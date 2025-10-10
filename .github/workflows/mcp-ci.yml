@@ -136,11 +136,11 @@ jobs:
             echo "No HTML outputs detected; skipping preview publishing."
             exit 0
           fi
-          cat <<'EOF' > "${tmp_dir}/README.md"
-# Quality report previews
-
-This branch is automatically managed by the MCP CI workflow and may be force-pushed.
-EOF
+          printf '%s\n%s\n%s\n' \
+            '# Quality report previews' \
+            '' \
+            'This branch is automatically managed by the MCP CI workflow and may be force-pushed.' \
+            > "${tmp_dir}/README.md"
           git -C "${tmp_dir}" init -b previews >/dev/null
           git -C "${tmp_dir}" config user.name "github-actions[bot]"
           git -C "${tmp_dir}" config user.email "github-actions[bot]@users.noreply.github.com"

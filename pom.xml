@@ -57,11 +57,18 @@
 		</dependency>
 
 		<!-- Needed to untar/gz the JDK -->
-		<dependency>
-			<groupId>org.apache.commons</groupId>
-			<artifactId>commons-compress</artifactId>
-			<version>1.27.1</version>
-		</dependency>
+                <dependency>
+                        <groupId>org.apache.commons</groupId>
+                        <artifactId>commons-compress</artifactId>
+                        <version>1.27.1</version>
+                </dependency>
+
+                <dependency>
+                        <groupId>com.github.spotbugs</groupId>
+                        <artifactId>spotbugs-annotations</artifactId>
+                        <version>4.8.6</version>
+                        <scope>provided</scope>
+                </dependency>
 
 		<dependency>
 			<groupId>org.mockito</groupId>
