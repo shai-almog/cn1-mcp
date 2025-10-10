@@ -92,7 +92,7 @@ class NativeStubGenerator {
             addJavaFile(files, "javase", "com.codename1.ui.PeerComponent", true);
             addJavaFile(files, "rim", "net.rim.device.api.ui.Field", false);
             addJavaFile(files, "j2me", "Object", false);
-            addCSFile(files, "win", "FrameworkElement");
+            addCSFile(files, "win");
             addIOSFiles(files);
             addJavaScriptFile(files);
         } catch (IOException ex) {
@@ -134,7 +134,7 @@ class NativeStubGenerator {
         files.put(path, builder.toString());
     }
 
-    private void addCSFile(Map<String, String> files, String platformDir, String peerComponentType) throws IOException {
+    private void addCSFile(Map<String, String> files, String platformDir) throws IOException {
         String pkg = nativeInterface.getPackage().getName();
         StringBuilder builder = new StringBuilder();
         builder.append("namespace ").append(pkg).append("{\r\n\r\n");

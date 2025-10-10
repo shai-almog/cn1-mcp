@@ -335,7 +335,7 @@ def parse_pmd() -> Optional[AnalysisReport]:
             )
     findings = [finding for finding in findings if finding.message]
     if not findings:
-        return None
+        return AnalysisReport(totals=priority_counts, findings=[])
     findings.sort(key=lambda item: int(item.severity[1:]) if item.severity[1:].isdigit() else 99)
     return AnalysisReport(totals=priority_counts, findings=findings)
 
