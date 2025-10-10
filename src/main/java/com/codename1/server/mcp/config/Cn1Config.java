@@ -12,16 +12,26 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(Cn1Config.Cn1Props.class)
 public class Cn1Config {
 
-    private static final Logger LOG = LoggerFactory.getLogger(Cn1Config.class);
+  private static final Logger LOG = LoggerFactory.getLogger(Cn1Config.class);
 
-    @Bean
-    public GlobalExtractor globalExtractor(Cn1Props p) {
-        LOG.info("Creating GlobalExtractor with cacheDir={} versionTag={}", p.cacheDir(), p.libsVersionTag());
-        return new GlobalExtractor(p.cacheDir(), p.libsVersionTag());
-    }
+  /**
+   * Provides the shared {@link GlobalExtractor} used to hydrate Codename One tooling libraries.
+   */
+  @Bean
+  public GlobalExtractor globalExtractor(Cn1Props props) {
+    LOG.info(
+        "Creating GlobalExtractor with cacheDir={} versionTag={}",
+        props.cacheDir(),
+        props.libsVersionTag());
+    return new GlobalExtractor(props.cacheDir(), props.libsVersionTag());
+  }
 
-    @ConfigurationProperties(prefix = "cn1")
-    public record Cn1Props(String cacheDir, String libsVersionTag, Jdk8Props jdk8) {
-        public record Jdk8Props(String linuxResourcePath, String macUrl, String windowsUrl, String rootMarker) {}
-    }
+  /** Configuration properties backing Codename One resources. */
+  @ConfigurationProperties(prefix = "cn1")
+  public record Cn1Props(String cacheDir, String libsVersionTag, Jdk8Props jdk8) {
+
+    /** JDK 8 download sources for different platforms. */
+    public record Jdk8Props(
+        String linuxResourcePath, String macUrl, String windowsUrl, String rootMarker) {}
+  }
 }

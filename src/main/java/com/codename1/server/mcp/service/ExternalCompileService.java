@@ -35,69 +35,70 @@ public class ExternalCompileService {
    */
   public CompileResponse compile(CompileRequest req) {
     try {
-    List<FileEntry> files = req.files() == null ? List.of() : List.copyOf(req.files());
-    LOG.info("Starting compile request with {} files", files.size());
+      List<FileEntry> files = req.files() == null ? List.of() : List.copyOf(req.files());
+      LOG.info("Starting compile request with {} files", files.size());
 
-    // Extract libs once
-    Path cn1 = extractor.ensureFile("/cn1libs/CodenameOne.jar");
-    Path boot = extractor.ensureFile("/cn1libs/CLDC11.jar");
+      // Extract libs once
+      Path cn1 = extractor.ensureFile("/cn1libs/CodenameOne.jar");
+      Path boot = extractor.ensureFile("/cn1libs/CLDC11.jar");
 
-    // Use bundled JDK 8
-    Path javac = jdk8.ensureJavac8();
-    LOG.debug("Resolved javac path: {}", javac);
+      // Use bundled JDK 8
+      Path javac = jdk8.ensureJavac8();
+      LOG.debug("Resolved javac path: {}", javac);
 
-    // Write sources
-    Path work = Files.createTempDirectory("cn1c-");
-    List<Path> sources = new ArrayList<>();
-    for (var f : files) {
-      Path p = work.resolve(f.path());
-      Path parent = p.getParent();
-      if (parent != null) {
-        Files.createDirectories(parent);
+      // Write sources
+      Path work = Files.createTempDirectory("cn1c-");
+      List<Path> sources = new ArrayList<>();
+      for (var f : files) {
+        Path p = work.resolve(f.path());
+        Path parent = p.getParent();
+        if (parent != null) {
+          Files.createDirectories(parent);
+        }
+        // SpotBugs: guard against files placed at the workspace root which have no parent
+        // directory.
+        Files.writeString(p, f.content(), StandardCharsets.UTF_8);
+        sources.add(p);
       }
-      // SpotBugs: guard against files placed at the workspace root which have no parent directory.
-      Files.writeString(p, f.content(), StandardCharsets.UTF_8);
-      sources.add(p);
-    }
 
-    List<String> cmd =
-        new ArrayList<>(
-            List.of(
-                javac.toString(),
-                "-source",
-                "8",
-                "-target",
-                "8",
-                "-Xlint:all",
-                "-extdirs",
-                "",
-                "-classpath",
-                cn1.toString()));
-    if (Files.exists(boot)) {
-      cmd.addAll(List.of("-bootclasspath", boot.toString()));
-    }
-    sources.forEach(s -> cmd.add(s.toString()));
-    LOG.debug("Compile command: {}", cmd);
+      List<String> cmd =
+          new ArrayList<>(
+              List.of(
+                  javac.toString(),
+                  "-source",
+                  "8",
+                  "-target",
+                  "8",
+                  "-Xlint:all",
+                  "-extdirs",
+                  "",
+                  "-classpath",
+                  cn1.toString()));
+      if (Files.exists(boot)) {
+        cmd.addAll(List.of("-bootclasspath", boot.toString()));
+      }
+      sources.forEach(s -> cmd.add(s.toString()));
+      LOG.debug("Compile command: {}", cmd);
 
-    ProcessBuilder pb = new ProcessBuilder(cmd);
-    pb.directory(work.toFile());
-    pb.redirectErrorStream(true);
-    Process pr = pb.start();
-    String out;
-    try (InputStream is = pr.getInputStream()) {
-      out = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+      ProcessBuilder pb = new ProcessBuilder(cmd);
+      pb.directory(work.toFile());
+      pb.redirectErrorStream(true);
+      Process pr = pb.start();
+      String out;
+      try (InputStream is = pr.getInputStream()) {
+        out = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+      }
+      int code = pr.waitFor();
+      boolean ok = code == 0 && !out.toLowerCase(Locale.ENGLISH).contains("error:");
+      LOG.info("Compile finished with exitCode={} success={}", code, ok);
+      return new CompileResponse(ok, out, List.of());
+    } catch (IOException e) {
+      LOG.error("Compile failed", e);
+      return new CompileResponse(false, e.toString(), List.of());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      LOG.error("Compile interrupted", e);
+      return new CompileResponse(false, e.toString(), List.of());
     }
-    int code = pr.waitFor();
-    boolean ok = code == 0 && !out.toLowerCase(Locale.ENGLISH).contains("error:");
-    LOG.info("Compile finished with exitCode={} success={}", code, ok);
-    return new CompileResponse(ok, out, List.of());
-  } catch (IOException e) {
-    LOG.error("Compile failed", e);
-    return new CompileResponse(false, e.toString(), List.of());
-  } catch (InterruptedException e) {
-    Thread.currentThread().interrupt();
-    LOG.error("Compile interrupted", e);
-    return new CompileResponse(false, e.toString(), List.of());
-  }
   }
 }

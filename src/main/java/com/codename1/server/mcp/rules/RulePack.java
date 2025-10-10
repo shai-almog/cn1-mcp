@@ -25,7 +25,8 @@ public final class RulePack {
       Pattern.compile("([A-Za-z]:\\\\\\\\|/Users/|/home/|/tmp/)");
 
   public static final Pattern UI_MUTATION =
-      Pattern.compile("\\.(add|setText|revalidate|show|setUIID|getStyle\\(\\)\\.set)[\\s\\r\\n]*\\(");
+      Pattern.compile(
+          "\\.(add|setText|revalidate|show|setUIID|getStyle\\(\\)\\.set)[\\s\\r\\n]*\\(");
 
   public static final Pattern CALLS_SERIAL =
       Pattern.compile(
