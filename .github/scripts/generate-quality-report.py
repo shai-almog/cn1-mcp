@@ -408,15 +408,30 @@ def _coverage_entry_to_markdown(entry: CoverageEntry, blob_base: Optional[str]) 
     return f"`{entry.name}` – {entry.coverage:.2f}%"
 
 
+def _format_link_suffix(html_url: Optional[str], archive_url: Optional[str]) -> str:
+    parts: List[str] = []
+    if html_url:
+        parts.append(f"[[HTML preview]]({html_url})")
+    if archive_url and archive_url != html_url:
+        label = "Download"
+        if not html_url:
+            label = "Report archive"
+        parts.append(f"[[{label}]]({archive_url})")
+    return (" " + " ".join(parts)) if parts else ""
+
+
 def format_coverage(
     coverage: Optional[float],
     entries: Iterable[CoverageEntry],
     blob_base: Optional[str],
+    html_url: Optional[str],
+    archive_url: Optional[str],
 ) -> List[str]:
     entries_list = list(entries)
     if coverage is None:
         return ["- ⚠️ Coverage report not generated."]
-    lines = [f"- 📊 **Line coverage:** {coverage:.2f}%"]
+    suffix = _format_link_suffix(html_url, archive_url)
+    lines = [f"- 📊 **Line coverage:** {coverage:.2f}%{suffix}"]
     if entries_list:
         sorted_entries = sorted(entries_list, key=lambda item: item.coverage)
         highlights = sorted_entries[:10]
@@ -429,7 +444,10 @@ def format_coverage(
 
 
 def format_spotbugs(
-    data: Optional[AnalysisReport], artifact_url: Optional[str], blob_base: Optional[str]
+    data: Optional[AnalysisReport],
+    html_url: Optional[str],
+    archive_url: Optional[str],
+    blob_base: Optional[str],
 ) -> List[str]:
     if not data:
         return ["- ⚠️ SpotBugs report not generated."]
@@ -439,9 +457,7 @@ def format_spotbugs(
         f"{sev}: {count}" for sev, count in data.totals.items() if count > 0
     )
     breakdown = breakdown or "no issues"
-    link_suffix = (
-        f" [[HTML report]]({artifact_url})" if artifact_url else ""
-    )
+    link_suffix = _format_link_suffix(html_url, archive_url)
     lines = [f"- {status} **SpotBugs:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
     if highlights:
@@ -453,7 +469,10 @@ def format_spotbugs(
 
 
 def format_pmd(
-    data: Optional[AnalysisReport], artifact_url: Optional[str], blob_base: Optional[str]
+    data: Optional[AnalysisReport],
+    html_url: Optional[str],
+    archive_url: Optional[str],
+    blob_base: Optional[str],
 ) -> List[str]:
     if not data:
         return ["- ⚠️ PMD report not generated."]
@@ -463,9 +482,7 @@ def format_pmd(
         f"P{priority}: {count}" for priority, count in sorted(data.totals.items()) if count > 0
     )
     breakdown = breakdown or "no issues"
-    link_suffix = (
-        f" [[HTML report]]({artifact_url})" if artifact_url else ""
-    )
+    link_suffix = _format_link_suffix(html_url, archive_url)
     lines = [f"- {status} **PMD:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
     if highlights:
@@ -477,7 +494,10 @@ def format_pmd(
 
 
 def format_checkstyle(
-    data: Optional[AnalysisReport], artifact_url: Optional[str], blob_base: Optional[str]
+    data: Optional[AnalysisReport],
+    html_url: Optional[str],
+    archive_url: Optional[str],
+    blob_base: Optional[str],
 ) -> List[str]:
     if not data:
         return ["- ⚠️ Checkstyle report not generated."]
@@ -487,9 +507,7 @@ def format_checkstyle(
         f"{severity.title()}: {count}" for severity, count in data.totals.items() if count > 0
     )
     breakdown = breakdown or "no issues"
-    link_suffix = (
-        f" [[HTML report]]({artifact_url})" if artifact_url else ""
-    )
+    link_suffix = _format_link_suffix(html_url, archive_url)
     lines = [f"- {status} **Checkstyle:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
     if highlights:
@@ -551,7 +569,10 @@ def write_analysis_html(name: str, title: str, report: Optional[AnalysisReport])
 
 
 def build_report(
-    artifact_urls: Dict[str, Optional[str]],
+    archive_urls: Dict[str, Optional[str]],
+    html_urls: Dict[str, Optional[str]],
+    coverage_html_url: Optional[str],
+    coverage_archive_url: Optional[str],
 ) -> str:
     if HTML_REPORT_DIR.exists():
         for child in HTML_REPORT_DIR.iterdir():
@@ -589,15 +610,38 @@ def build_report(
         "### Test & Coverage",
         format_tests(tests),
     ]
-    lines.extend(format_coverage(coverage, class_entries, blob_base))
+    lines.extend(
+        format_coverage(
+            coverage,
+            class_entries,
+            blob_base,
+            coverage_html_url,
+            coverage_archive_url,
+        )
+    )
     lines.extend([
         "",
         "### Static Analysis",
     ])
     for block in (
-        format_spotbugs(spotbugs, artifact_urls.get("spotbugs"), blob_base),
-        format_pmd(pmd, artifact_urls.get("pmd"), blob_base),
-        format_checkstyle(checkstyle, artifact_urls.get("checkstyle"), blob_base),
+        format_spotbugs(
+            spotbugs,
+            html_urls.get("spotbugs"),
+            archive_urls.get("spotbugs"),
+            blob_base,
+        ),
+        format_pmd(
+            pmd,
+            html_urls.get("pmd"),
+            archive_urls.get("pmd"),
+            blob_base,
+        ),
+        format_checkstyle(
+            checkstyle,
+            html_urls.get("checkstyle"),
+            archive_urls.get("checkstyle"),
+            blob_base,
+        ),
     ):
         lines.extend(block)
     lines.extend(
@@ -610,13 +654,20 @@ def build_report(
 
 
 def main() -> None:
-    artifact_urls = {
+    archive_urls = {
         "spotbugs": os.environ.get("SPOTBUGS_REPORT_URL"),
         "pmd": os.environ.get("PMD_REPORT_URL"),
         "checkstyle": os.environ.get("CHECKSTYLE_REPORT_URL"),
     }
+    html_urls = {
+        "spotbugs": os.environ.get("SPOTBUGS_HTML_URL"),
+        "pmd": os.environ.get("PMD_HTML_URL"),
+        "checkstyle": os.environ.get("CHECKSTYLE_HTML_URL"),
+    }
+    coverage_html_url = os.environ.get("JACOCO_HTML_URL")
+    coverage_archive_url = os.environ.get("JACOCO_REPORT_URL")
     generate_html_only = os.environ.get("QUALITY_REPORT_GENERATE_HTML_ONLY") == "1"
-    report = build_report(artifact_urls)
+    report = build_report(archive_urls, html_urls, coverage_html_url, coverage_archive_url)
     if not generate_html_only:
         REPORT_PATH.write_text(report + "\n", encoding="utf-8")
 

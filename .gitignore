@@ -32,3 +32,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Generated during STDIO integration tests
+cn1-mcp-stdio.log

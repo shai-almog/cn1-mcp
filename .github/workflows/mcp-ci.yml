@@ -94,14 +94,94 @@ jobs:
           name: checkstyle-html-report
           path: target/quality-report/checkstyle.html
 
+      - name: Upload JaCoCo coverage report
+        if: always() && hashFiles('target/site/jacoco/index.html') != ''
+        id: upload-jacoco-html
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-html-report
+          path: target/site/jacoco
+
+      - name: Publish HTML previews
+        if: always() && github.server_url == 'https://github.com' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        id: publish-previews
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [ "${SERVER_URL}" != "https://github.com" ]; then
+            echo "HTML previews are only published for github.com instances."
+            exit 0
+          fi
+          run_dir="runs/${RUN_ID}-${RUN_ATTEMPT}"
+          tmp_dir=$(mktemp -d)
+          dest_dir="${tmp_dir}/${run_dir}"
+          mkdir -p "${dest_dir}"
+          has_content=0
+          if compgen -G "target/quality-report/*.html" > /dev/null; then
+            mkdir -p "${dest_dir}/static-analysis"
+            cp target/quality-report/*.html "${dest_dir}/static-analysis/"
+            has_content=1
+          fi
+          if [ -d target/site/jacoco ] && [ -f target/site/jacoco/index.html ]; then
+            mkdir -p "${dest_dir}/coverage"
+            cp -R target/site/jacoco/. "${dest_dir}/coverage/"
+            has_content=1
+          fi
+          if [ "${has_content}" -eq 0 ]; then
+            echo "No HTML outputs detected; skipping preview publishing."
+            exit 0
+          fi
+          cat <<'EOF' > "${tmp_dir}/README.md"
+# Quality report previews
+
+This branch is automatically managed by the MCP CI workflow and may be force-pushed.
+EOF
+          git -C "${tmp_dir}" init -b previews >/dev/null
+          git -C "${tmp_dir}" config user.name "github-actions[bot]"
+          git -C "${tmp_dir}" config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C "${tmp_dir}" add .
+          git -C "${tmp_dir}" commit -m "Publish quality report previews for run ${RUN_ID} (attempt ${RUN_ATTEMPT})" >/dev/null
+          remote_url="${SERVER_URL}/${REPOSITORY}.git"
+          token_remote_url="${remote_url/https:\/\//https://x-access-token:${GITHUB_TOKEN}@}"
+          git -C "${tmp_dir}" push --force "${token_remote_url}" previews:quality-report-previews >/dev/null
+          commit_sha=$(git -C "${tmp_dir}" rev-parse HEAD)
+          raw_base="https://raw.githubusercontent.com/${REPOSITORY}/${commit_sha}/${run_dir}"
+          preview_base="https://htmlpreview.github.io/?${raw_base}"
+          {
+            echo "commit=${commit_sha}"
+            echo "run_path=${run_dir}"
+          } >> "$GITHUB_OUTPUT"
+          if [ -f "${tmp_dir}/${run_dir}/static-analysis/spotbugs.html" ]; then
+            echo "spotbugs_url=${preview_base}/static-analysis/spotbugs.html" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f "${tmp_dir}/${run_dir}/static-analysis/pmd.html" ]; then
+            echo "pmd_url=${preview_base}/static-analysis/pmd.html" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f "${tmp_dir}/${run_dir}/static-analysis/checkstyle.html" ]; then
+            echo "checkstyle_url=${preview_base}/static-analysis/checkstyle.html" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f "${tmp_dir}/${run_dir}/coverage/index.html" ]; then
+            echo "jacoco_url=${preview_base}/coverage/index.html" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Generate quality report
         env:
           QUALITY_REPORT_SERVER_URL: ${{ github.server_url }}
           QUALITY_REPORT_REPOSITORY: ${{ github.repository }}
           QUALITY_REPORT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
-          SPOTBUGS_REPORT_URL: ${{ steps.upload-spotbugs-html.outputs.artifact-url }}
-          PMD_REPORT_URL: ${{ steps.upload-pmd-html.outputs.artifact-url }}
-          CHECKSTYLE_REPORT_URL: ${{ steps.upload-checkstyle-html.outputs.artifact-url }}
+          SPOTBUGS_REPORT_URL: ${{ steps.upload-spotbugs-html.outputs.artifact-url || steps.upload-static-analysis.outputs.artifact-url }}
+          PMD_REPORT_URL: ${{ steps.upload-pmd-html.outputs.artifact-url || steps.upload-static-analysis.outputs.artifact-url }}
+          CHECKSTYLE_REPORT_URL: ${{ steps.upload-checkstyle-html.outputs.artifact-url || steps.upload-static-analysis.outputs.artifact-url }}
+          SPOTBUGS_HTML_URL: ${{ steps.publish-previews.outputs.spotbugs_url }}
+          PMD_HTML_URL: ${{ steps.publish-previews.outputs.pmd_url }}
+          CHECKSTYLE_HTML_URL: ${{ steps.publish-previews.outputs.checkstyle_url }}
+          JACOCO_HTML_URL: ${{ steps.publish-previews.outputs.jacoco_url }}
+          JACOCO_REPORT_URL: ${{ steps.upload-jacoco-html.outputs.artifact-url || steps.upload-static-analysis.outputs.artifact-url }}
         run: python3 .github/scripts/generate-quality-report.py
 
       - name: Upload quality report artifact
