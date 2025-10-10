@@ -4,6 +4,11 @@ on:
   push:
     branches: ["main", "master"]
   pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -22,6 +27,24 @@ jobs:
         env:
           SPRING_PROFILES_ACTIVE: stdio
         run: ./mvnw -B -ntp verify
+
+      - name: Prepare cross-platform jar
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          jar_path=$(find target -maxdepth 1 -type f -name 'mcp-*.jar' ! -name '*.original' | head -n 1)
+          if [ -z "$jar_path" ]; then
+            echo "Unable to locate built jar in target/"
+            find target -maxdepth 1 -type f -name '*.jar' -print
+            exit 1
+          fi
+          cp "$jar_path" dist/cn1-mcp-stdio.jar
+
+      - name: Upload cross-platform jar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cn1-mcp-stdio-jar
+          path: dist/cn1-mcp-stdio.jar
 
   native-images:
     needs: build
@@ -136,3 +159,24 @@ jobs:
         with:
           name: ${{ matrix.artifact-name }}
           path: native-dist/${{ matrix.artifact-file-name }}
+
+  publish-release:
+    if: github.event_name == 'release'
+    needs:
+      - build
+      - native-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Attach assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/cn1-mcp-stdio-jar/cn1-mcp-stdio.jar
+            release-assets/cn1-mcp-stdio-linux/cn1-mcp-stdio-linux
+            release-assets/cn1-mcp-stdio-macos/cn1-mcp-stdio-macos
+            release-assets/cn1-mcp-stdio-windows/cn1-mcp-stdio-windows.exe
