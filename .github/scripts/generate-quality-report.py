@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import html
 import os
+import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_DIR = ROOT / "target"
 REPORT_PATH = ROOT / "quality-report.md"
+HTML_REPORT_DIR = TARGET_DIR / "quality-report"
 SOURCE_BASES = [
     Path("src/main/java"),
     Path("src/test/java"),
@@ -51,6 +54,13 @@ class Finding:
 class AnalysisReport:
     totals: Dict[str, int]
     findings: List[Finding]
+
+
+@dataclass
+class CoverageEntry:
+    name: str
+    coverage: float
+    path: Optional[str] = None
 
 
 def _clean_message(value: Optional[str]) -> str:
@@ -125,24 +135,59 @@ def parse_surefire() -> Optional[Dict[str, int]]:
     return totals if found else None
 
 
-def parse_jacoco() -> Optional[float]:
+def parse_jacoco() -> Tuple[Optional[float], List[CoverageEntry]]:
     report = TARGET_DIR / "site" / "jacoco" / "jacoco.xml"
     if not report.exists():
-        return None
+        return None, []
     try:
         root = ET.parse(report).getroot()
     except ET.ParseError:
-        return None
+        return None, []
     covered = 0
     missed = 0
+    entries: List[CoverageEntry] = []
     for counter in root.findall("counter"):
         if counter.attrib.get("type") == "LINE":
             covered += int(counter.attrib.get("covered", "0"))
             missed += int(counter.attrib.get("missed", "0"))
+    for package in root.findall("package"):
+        package_name = package.attrib.get("name", "").rstrip("/")
+        for class_elem in package.findall("class"):
+            class_name = class_elem.attrib.get("name", "")
+            source_filename = class_elem.attrib.get("sourcefilename")
+            line_counter = None
+            for counter in class_elem.findall("counter"):
+                if counter.attrib.get("type") == "LINE":
+                    line_counter = counter
+                    break
+            if line_counter is None:
+                continue
+            class_covered = int(line_counter.attrib.get("covered", "0"))
+            class_missed = int(line_counter.attrib.get("missed", "0"))
+            class_total = class_covered + class_missed
+            if class_total == 0:
+                continue
+            coverage = class_covered / class_total * 100.0
+            dotted_name = class_name.replace("/", ".") if class_name else source_filename or "Unknown"
+            candidate_path = None
+            if source_filename:
+                package_path = package_name.replace(".", "/")
+                if package_path:
+                    candidate_path = f"{package_path}/{source_filename}"
+                else:
+                    candidate_path = source_filename
+            relative_path = _relative_path(candidate_path) if candidate_path else None
+            entries.append(
+                CoverageEntry(
+                    name=dotted_name,
+                    coverage=coverage,
+                    path=relative_path,
+                )
+            )
     total = covered + missed
     if total == 0:
-        return None
-    return covered / total * 100.0
+        return None, entries
+    return covered / total * 100.0, entries
 
 
 def parse_spotbugs() -> Optional[AnalysisReport]:
@@ -356,10 +401,31 @@ def format_tests(totals: Optional[Dict[str, int]]) -> str:
     )
 
 
-def format_coverage(coverage: Optional[float]) -> str:
+def _coverage_entry_to_markdown(entry: CoverageEntry, blob_base: Optional[str]) -> str:
+    if blob_base and entry.path:
+        path = quote(entry.path, safe="/+")
+        return f"[`{entry.name}`]({blob_base}/{path}) – {entry.coverage:.2f}%"
+    return f"`{entry.name}` – {entry.coverage:.2f}%"
+
+
+def format_coverage(
+    coverage: Optional[float],
+    entries: Iterable[CoverageEntry],
+    blob_base: Optional[str],
+) -> List[str]:
+    entries_list = list(entries)
     if coverage is None:
-        return "- ⚠️ Coverage report not generated."
-    return f"- 📊 **Line coverage:** {coverage:.2f}%"
+        return ["- ⚠️ Coverage report not generated."]
+    lines = [f"- 📊 **Line coverage:** {coverage:.2f}%"]
+    if entries_list:
+        sorted_entries = sorted(entries_list, key=lambda item: item.coverage)
+        highlights = sorted_entries[:10]
+        if highlights:
+            lines.append("  - **Lowest covered classes**")
+            lines.extend(
+                f"    - {_coverage_entry_to_markdown(entry, blob_base)}" for entry in highlights
+            )
+    return lines
 
 
 def format_spotbugs(
@@ -374,7 +440,7 @@ def format_spotbugs(
     )
     breakdown = breakdown or "no issues"
     link_suffix = (
-        f" [[Download reports]]({artifact_url})" if artifact_url else ""
+        f" [[HTML report]]({artifact_url})" if artifact_url else ""
     )
     lines = [f"- {status} **SpotBugs:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
@@ -398,7 +464,7 @@ def format_pmd(
     )
     breakdown = breakdown or "no issues"
     link_suffix = (
-        f" [[Download reports]]({artifact_url})" if artifact_url else ""
+        f" [[HTML report]]({artifact_url})" if artifact_url else ""
     )
     lines = [f"- {status} **PMD:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
@@ -422,7 +488,7 @@ def format_checkstyle(
     )
     breakdown = breakdown or "no issues"
     link_suffix = (
-        f" [[Download reports]]({artifact_url})" if artifact_url else ""
+        f" [[HTML report]]({artifact_url})" if artifact_url else ""
     )
     lines = [f"- {status} **Checkstyle:** {total} findings ({breakdown}){link_suffix}"]
     highlights = data.findings[:5]
@@ -434,12 +500,77 @@ def format_checkstyle(
     return lines
 
 
-def build_report(artifact_url: Optional[str]) -> str:
+def write_analysis_html(name: str, title: str, report: Optional[AnalysisReport]) -> Optional[Path]:
+    if report is None or not report.findings:
+        return None
+    lines = [
+        "<!DOCTYPE html>",
+        "<html lang=\"en\">",
+        "<head>",
+        f"  <meta charset=\"utf-8\">",
+        f"  <title>{title}</title>",
+        "  <style>body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:1.5rem;max-width:960px;margin:auto;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #d0d7de;padding:0.5rem;text-align:left;}th{background:#f6f8fa;}code{background:#f3f4f6;padding:0.1rem 0.3rem;border-radius:4px;}caption{font-weight:600;margin-bottom:0.75rem;text-align:left;}</style>",
+        "</head>",
+        "<body>",
+        f"  <h1>{title}</h1>",
+        "  <table>",
+        "    <caption>Reported findings</caption>",
+        "    <thead>",
+        "      <tr>",
+        "        <th scope=\"col\">Severity</th>",
+        "        <th scope=\"col\">Location</th>",
+        "        <th scope=\"col\">Message</th>",
+        "        <th scope=\"col\">Rule</th>",
+        "      </tr>",
+        "    </thead>",
+        "    <tbody>",
+    ]
+    for finding in report.findings:
+        rule = finding.rule or ""
+        location = finding.location
+        message = finding.message
+        lines.extend(
+            [
+                "      <tr>",
+                f"        <td>{html.escape(finding.severity)}</td>",
+                f"        <td><code>{html.escape(location)}</code></td>",
+                f"        <td>{html.escape(message)}</td>",
+                f"        <td><code>{html.escape(rule)}</code></td>",
+                "      </tr>",
+            ]
+        )
+    lines.extend([
+        "    </tbody>",
+        "  </table>",
+        "</body>",
+        "</html>",
+    ])
+    output_path = HTML_REPORT_DIR / f"{name}.html"
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return output_path
+
+
+def build_report(
+    artifact_urls: Dict[str, Optional[str]],
+) -> str:
+    if HTML_REPORT_DIR.exists():
+        for child in HTML_REPORT_DIR.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+    else:
+        HTML_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
     tests = parse_surefire()
-    coverage = parse_jacoco()
+    coverage, class_entries = parse_jacoco()
     spotbugs = parse_spotbugs()
     pmd = parse_pmd()
     checkstyle = parse_checkstyle()
+
+    write_analysis_html("spotbugs", "SpotBugs Findings", spotbugs)
+    write_analysis_html("pmd", "PMD Findings", pmd)
+    write_analysis_html("checkstyle", "Checkstyle Findings", checkstyle)
 
     server_url = os.environ.get("QUALITY_REPORT_SERVER_URL") or os.environ.get(
         "GITHUB_SERVER_URL", "https://github.com"
@@ -457,14 +588,16 @@ def build_report(artifact_url: Optional[str]) -> str:
         "",
         "### Test & Coverage",
         format_tests(tests),
-        format_coverage(coverage),
+    ]
+    lines.extend(format_coverage(coverage, class_entries, blob_base))
+    lines.extend([
         "",
         "### Static Analysis",
-    ]
+    ])
     for block in (
-        format_spotbugs(spotbugs, artifact_url, blob_base),
-        format_pmd(pmd, artifact_url, blob_base),
-        format_checkstyle(checkstyle, artifact_url, blob_base),
+        format_spotbugs(spotbugs, artifact_urls.get("spotbugs"), blob_base),
+        format_pmd(pmd, artifact_urls.get("pmd"), blob_base),
+        format_checkstyle(checkstyle, artifact_urls.get("checkstyle"), blob_base),
     ):
         lines.extend(block)
     lines.extend(
@@ -477,9 +610,15 @@ def build_report(artifact_url: Optional[str]) -> str:
 
 
 def main() -> None:
-    artifact_url = os.environ.get("STATIC_ANALYSIS_ARTIFACT_URL")
-    report = build_report(artifact_url if artifact_url else None)
-    REPORT_PATH.write_text(report + "\n", encoding="utf-8")
+    artifact_urls = {
+        "spotbugs": os.environ.get("SPOTBUGS_REPORT_URL"),
+        "pmd": os.environ.get("PMD_REPORT_URL"),
+        "checkstyle": os.environ.get("CHECKSTYLE_REPORT_URL"),
+    }
+    generate_html_only = os.environ.get("QUALITY_REPORT_GENERATE_HTML_ONLY") == "1"
+    report = build_report(artifact_urls)
+    if not generate_html_only:
+        REPORT_PATH.write_text(report + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

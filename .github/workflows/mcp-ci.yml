@@ -30,6 +30,15 @@ jobs:
           SPRING_PROFILES_ACTIVE: stdio
         run: ./mvnw -B -ntp verify
 
+      - name: Generate static analysis HTML summaries
+        if: always()
+        env:
+          QUALITY_REPORT_GENERATE_HTML_ONLY: "1"
+          QUALITY_REPORT_SERVER_URL: ${{ github.server_url }}
+          QUALITY_REPORT_REPOSITORY: ${{ github.repository }}
+          QUALITY_REPORT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 .github/scripts/generate-quality-report.py
+
       - name: Collect static analysis outputs
         if: always()
         run: |
@@ -45,6 +54,10 @@ jobs:
             mkdir -p quality-artifacts/static-analysis/site
             cp -R target/site/. quality-artifacts/static-analysis/site/
           fi
+          if [ -d target/quality-report ]; then
+            mkdir -p quality-artifacts/static-analysis/html
+            cp -R target/quality-report/. quality-artifacts/static-analysis/html/
+          fi
           if [ "$(find quality-artifacts/static-analysis -type f | wc -l)" -eq 0 ]; then
             echo "No static analysis outputs were generated." > quality-artifacts/static-analysis/README.txt
           fi
@@ -57,12 +70,38 @@ jobs:
           name: static-analysis-reports
           path: quality-artifacts/static-analysis
 
+      - name: Upload SpotBugs HTML report
+        if: always() && hashFiles('target/quality-report/spotbugs.html') != ''
+        id: upload-spotbugs-html
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotbugs-html-report
+          path: target/quality-report/spotbugs.html
+
+      - name: Upload PMD HTML report
+        if: always() && hashFiles('target/quality-report/pmd.html') != ''
+        id: upload-pmd-html
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmd-html-report
+          path: target/quality-report/pmd.html
+
+      - name: Upload Checkstyle HTML report
+        if: always() && hashFiles('target/quality-report/checkstyle.html') != ''
+        id: upload-checkstyle-html
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkstyle-html-report
+          path: target/quality-report/checkstyle.html
+
       - name: Generate quality report
         env:
-          STATIC_ANALYSIS_ARTIFACT_URL: ${{ steps.upload-static-analysis.outputs.artifact-url }}
           QUALITY_REPORT_SERVER_URL: ${{ github.server_url }}
           QUALITY_REPORT_REPOSITORY: ${{ github.repository }}
           QUALITY_REPORT_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+          SPOTBUGS_REPORT_URL: ${{ steps.upload-spotbugs-html.outputs.artifact-url }}
+          PMD_REPORT_URL: ${{ steps.upload-pmd-html.outputs.artifact-url }}
+          CHECKSTYLE_REPORT_URL: ${{ steps.upload-checkstyle-html.outputs.artifact-url }}
         run: python3 .github/scripts/generate-quality-report.py
 
       - name: Upload quality report artifact
