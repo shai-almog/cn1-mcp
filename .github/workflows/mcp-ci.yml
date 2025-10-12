@@ -64,7 +64,7 @@ jobs:
             --protocol-version 2025-06-18 \
             --test-timeout 60 \
             --tools-timeout 30 \
-            --server-command "env SPRING_PROFILES_ACTIVE=stdio java -Dorg.springframework.boot.logging.LoggingSystem=none -Dloader.main=com.codename1.server.stdiomcp.StdIoMcpMain -jar ${jar_path}" \
+            --server-command "env SPRING_PROFILES_ACTIVE=stdio java -Dloader.main=com.codename1.server.stdiomcp.StdIoMcpMain -jar ${jar_path}" \
             2>&1 | tee "$log_path"
 
       - name: Generate static analysis HTML summaries
