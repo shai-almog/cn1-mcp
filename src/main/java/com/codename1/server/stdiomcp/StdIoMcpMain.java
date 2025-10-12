@@ -41,7 +41,8 @@ public final class StdIoMcpMain {
   private static final String DEFAULT_MODE = "default";
   private static final String GUIDE_MODE = "cn1_guide";
   private static final List<Map<String, Object>> TOOL_DESCRIPTORS = createToolDescriptors();
-  private static final List<String> SUPPORTED_PROTOCOL_VERSIONS = List.of("2024-11-05");
+  private static final List<String> SUPPORTED_PROTOCOL_VERSIONS =
+      List.of("2025-06-18", "2024-11-05");
   private static final String DEFAULT_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS.get(0);
   private static final String SERVER_NAME = "cn1-mcp";
   private static final String SERVER_VERSION = "0.1.0";
@@ -425,7 +426,7 @@ public final class StdIoMcpMain {
         if (code == null) {
           throw new IllegalArgumentException("Missing required argument 'code'");
         }
-        int length = code != null ? code.length() : 0;
+        int length = code.length();
         LOG.info("Invoking lint tool for request id={} ({} chars)", req.id(), length);
         toolPayload = lint.lint(new LintRequest(code, "java", List.of()));
       }
