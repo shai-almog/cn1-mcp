@@ -618,7 +618,8 @@ public final class StdIoMcpMain {
       if (SUPPORTED_PROTOCOL_VERSIONS.contains(version)) {
         return version;
       }
-      return null;
+      LOG.warn("Unsupported protocolVersion '{}' requested, falling back to default", version);
+      return DEFAULT_PROTOCOL_VERSION;
     }
     Object versions = params.get("protocolVersions");
     if (versions instanceof List<?> list && !list.isEmpty()) {
@@ -627,7 +628,8 @@ public final class StdIoMcpMain {
           return supported;
         }
       }
-      return null;
+      LOG.warn("Unsupported protocolVersions {} requested, falling back to default", list);
+      return DEFAULT_PROTOCOL_VERSION;
     }
     return DEFAULT_PROTOCOL_VERSION;
   }
