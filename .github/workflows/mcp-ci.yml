@@ -25,10 +25,54 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install MCP Validator dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          git clone --depth 1 https://github.com/Janix-ai/mcp-validator.git mcp-validator
+          python -m pip install -r mcp-validator/requirements.txt
+          echo "MCP_VALIDATOR_PATH=$(pwd)/mcp-validator" >> "$GITHUB_ENV"
+          current_pythonpath="${PYTHONPATH:-}"
+          if [ -n "$current_pythonpath" ]; then
+            echo "PYTHONPATH=$(pwd)/mcp-validator:$current_pythonpath" >> "$GITHUB_ENV"
+          else
+            echo "PYTHONPATH=$(pwd)/mcp-validator" >> "$GITHUB_ENV"
+          fi
+
       - name: Build, test and analyze in MCP stdio mode
         env:
           SPRING_PROFILES_ACTIVE: stdio
         run: ./mvnw -B -ntp verify
+
+      - name: Run MCP compliance validation (STDIO)
+        run: |
+          set -euo pipefail
+          jar_path=$(find target -maxdepth 1 -type f -name 'mcp-*.jar' ! -name '*.original' | head -n 1)
+          if [ -z "$jar_path" ]; then
+            echo "Unable to locate built jar for MCP compliance validation"
+            find target -maxdepth 1 -type f -name '*.jar' -print || true
+            exit 1
+          fi
+          mkdir -p target
+          log_path="target/mcp-compliance-stdio.log"
+          set +e
+          python -m mcp_testing.scripts.compliance_report \
+            --protocol-version 2025-06-18 \
+            --test-timeout 60 \
+            --tools-timeout 30 \
+            --server-command "env SPRING_PROFILES_ACTIVE=stdio java -Dloader.main=com.codename1.server.stdiomcp.StdIoMcpMain -jar ${jar_path}" \
+            2>&1 | tee "$log_path"
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          echo "MCP_COMPLIANCE_EXIT_CODE=${exit_code}" >> "$GITHUB_ENV"
+          if [ "$exit_code" -ne 0 ]; then
+            echo "::warning::MCP compliance validation finished with exit code ${exit_code}. See ${log_path} for details." >&2
+          fi
 
       - name: Generate static analysis HTML summaries
         if: always()
