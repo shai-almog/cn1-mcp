@@ -30,10 +30,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install MCP Validator
+      - name: Install MCP Validator dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install "git+https://github.com/Janix-ai/mcp-validator.git"
+          git clone --depth 1 https://github.com/Janix-ai/mcp-validator.git mcp-validator
+          python -m pip install -r mcp-validator/requirements.txt
+          echo "MCP_VALIDATOR_PATH=$(pwd)/mcp-validator" >> "$GITHUB_ENV"
+          current_pythonpath="${PYTHONPATH:-}"
+          if [ -n "$current_pythonpath" ]; then
+            echo "PYTHONPATH=$(pwd)/mcp-validator:$current_pythonpath" >> "$GITHUB_ENV"
+          else
+            echo "PYTHONPATH=$(pwd)/mcp-validator" >> "$GITHUB_ENV"
+          fi
 
       - name: Build, test and analyze in MCP stdio mode
         env:
