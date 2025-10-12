@@ -25,10 +25,38 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install MCP Validator
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "git+https://github.com/Janix-ai/mcp-validator.git"
+
       - name: Build, test and analyze in MCP stdio mode
         env:
           SPRING_PROFILES_ACTIVE: stdio
         run: ./mvnw -B -ntp verify
+
+      - name: Run MCP compliance validation (STDIO)
+        run: |
+          set -euo pipefail
+          jar_path=$(find target -maxdepth 1 -type f -name 'mcp-*.jar' ! -name '*.original' | head -n 1)
+          if [ -z "$jar_path" ]; then
+            echo "Unable to locate built jar for MCP compliance validation"
+            find target -maxdepth 1 -type f -name '*.jar' -print || true
+            exit 1
+          fi
+          mkdir -p target
+          log_path="target/mcp-compliance-stdio.log"
+          python -m mcp_testing.scripts.compliance_report \
+            --protocol-version 2025-06-18 \
+            --test-timeout 60 \
+            --tools-timeout 30 \
+            --server-command "env SPRING_PROFILES_ACTIVE=stdio java -Dorg.springframework.boot.logging.LoggingSystem=none -Dloader.main=com.codename1.server.stdiomcp.StdIoMcpMain -jar ${jar_path}" \
+            2>&1 | tee "$log_path"
 
       - name: Generate static analysis HTML summaries
         if: always()

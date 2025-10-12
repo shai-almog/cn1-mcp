@@ -25,6 +25,9 @@ SOURCE_BASES = [
 ]
 
 
+MCP_COMPLIANCE_LOG = TARGET_DIR / "mcp-compliance-stdio.log"
+
+
 @dataclass
 class Finding:
     severity: str
@@ -115,6 +118,31 @@ def _relative_path(raw_path: Optional[str]) -> str:
             return rel_str
         potential.append(rel_str)
     return potential[0] if potential else normalized
+
+
+def _read_mcp_compliance_log(max_lines: int = 200) -> Optional[List[str]]:
+    if not MCP_COMPLIANCE_LOG.exists():
+        return None
+    content = MCP_COMPLIANCE_LOG.read_text(encoding="utf-8", errors="replace").strip()
+    if not content:
+        return [
+            "<details><summary>STDIO compliance report</summary>",
+            "",
+            "_Compliance log captured no output._",
+            "",
+            "</details>",
+        ]
+    lines = content.splitlines()
+    total = len(lines)
+    truncated_lines = lines[-max_lines:] if total > max_lines else lines
+    header: Optional[str] = None
+    if total > max_lines:
+        header = f"_Showing last {max_lines} of {total} lines._"
+    block: List[str] = ["<details><summary>STDIO compliance report</summary>", ""]
+    if header:
+        block.extend([header, ""])
+    block.extend(["```", "\n".join(truncated_lines), "```", "", "</details>"])
+    return block
 
 
 def parse_surefire() -> Optional[Dict[str, int]]:
@@ -627,6 +655,15 @@ def build_report(
             coverage_archive_url,
         )
     )
+    lines.extend([
+        "",
+        "### MCP Compliance Validation",
+    ])
+    mcp_compliance_block = _read_mcp_compliance_log()
+    if mcp_compliance_block:
+        lines.extend(mcp_compliance_block)
+    else:
+        lines.append("_No MCP compliance results were captured in this run._")
     lines.extend([
         "",
         "### Static Analysis",
