@@ -42,7 +42,7 @@ public final class StdIoMcpMain {
   private static final String GUIDE_MODE = "cn1_guide";
   private static final List<Map<String, Object>> TOOL_DESCRIPTORS = createToolDescriptors();
   private static final List<String> SUPPORTED_PROTOCOL_VERSIONS =
-      List.of("2025-06-18", "2024-11-05");
+      List.of("2024-11-05");
   private static final String DEFAULT_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS.get(0);
   private static final String SERVER_NAME = "cn1-mcp";
   private static final String SERVER_VERSION = "0.1.0";
@@ -563,13 +563,9 @@ public final class StdIoMcpMain {
       throw new IllegalArgumentException("Unknown prompt: " + name);
     }
 
-    Map<String, Object> content =
-        Map.of(
-            "content",
-            List.of(Map.of("type", "text", "text", output)),
-            "metadata",
-            Map.of());
-    return new RpcRes("2.0", req.id(), content);
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("content", List.of(Map.of("type", "text", "text", output)));
+    return new RpcRes("2.0", req.id(), result);
   }
 
   private static Object handleResourcesList(RpcReq req, GuideService guides, ModeState mode) {
@@ -690,8 +686,8 @@ public final class StdIoMcpMain {
         return version;
       }
       LOG.warn(
-          "Unsupported protocolVersion '{}' requested; returning error", version);
-      return null;
+          "Unsupported protocolVersion '{}' requested; falling back to default", version);
+      return DEFAULT_PROTOCOL_VERSION;
     }
     Object versions = params.get("protocolVersions");
     if (versions instanceof List<?> list && !list.isEmpty()) {
@@ -700,8 +696,10 @@ public final class StdIoMcpMain {
           return supported;
         }
       }
-      LOG.warn("No compatible protocolVersions {} requested; returning error", list);
-      return null;
+      LOG.warn(
+          "No compatible protocolVersions {} requested; falling back to default",
+          list);
+      return DEFAULT_PROTOCOL_VERSION;
     }
     return DEFAULT_PROTOCOL_VERSION;
   }
