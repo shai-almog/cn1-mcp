@@ -11,6 +11,8 @@ import com.codename1.server.mcp.service.ExternalCompileService;
 import com.codename1.server.mcp.service.GuideService;
 import com.codename1.server.mcp.service.LintService;
 import com.codename1.server.mcp.service.NativeStubService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -25,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.WebApplicationType;
@@ -39,6 +42,16 @@ public final class StdIoMcpMain {
   private static final String DEFAULT_MODE = "default";
   private static final String GUIDE_MODE = "cn1_guide";
   private static final List<Map<String, Object>> TOOL_DESCRIPTORS = createToolDescriptors();
+  private static final String DEFAULT_PROTOCOL_VERSION = "2024-11-05";
+  private static final Set<String> SUPPORTED_PROTOCOL_VERSIONS =
+      Set.of(DEFAULT_PROTOCOL_VERSION);
+  private static final Map<String, Object> SERVER_INFO = Map.of("name", "cn1-mcp", "version", "0.1.0");
+  private static final Map<String, Object> SERVER_CAPABILITIES =
+      Map.of(
+          "tools", Map.of("list", Map.of(), "call", Map.of()),
+          "prompts", Map.of("list", Map.of(), "call", Map.of()),
+          "resources", Map.of("list", Map.of(), "read", Map.of()),
+          "modes", Map.of("list", Map.of(), "set", Map.of()));
 
   private StdIoMcpMain() {}
 
@@ -72,35 +85,133 @@ public final class StdIoMcpMain {
           if (line.isBlank()) {
             continue;
           }
-          RpcReq req;
           try {
-            req = MAPPER.readValue(line, RpcReq.class);
-            LOG.debug(
-                "Received request id={} method={} params={}",
-                req.id(),
-                req.method(),
-                req.params());
-          } catch (IOException | RuntimeException e) {
+            JsonNode payload = MAPPER.readTree(line);
+            if (payload.isArray()) {
+              List<Object> responses = new ArrayList<>();
+              for (JsonNode element : payload) {
+                Object response =
+                    processJsonNode(
+                        element, lint, compile, cssCompile, guides, nativeStubs, mode);
+                if (response != null) {
+                  responses.add(response);
+                }
+              }
+              if (!responses.isEmpty()) {
+                writeJson(out, responses);
+              }
+            } else {
+              Object response =
+                  processJsonNode(
+                      payload, lint, compile, cssCompile, guides, nativeStubs, mode);
+              if (response != null) {
+                writeJson(out, response);
+              }
+            }
+          } catch (JsonProcessingException e) {
             LOG.warn("Failed to parse incoming payload: {}", line, e);
             writeJson(
                 out,
                 new RpcErr(
                     "2.0", null, Map.of("code", -32700, "message", "Parse error")));
-            continue;
-          }
-
-          try {
-            handleRequest(req, out, lint, compile, cssCompile, guides, nativeStubs, mode);
-          } catch (IOException | RuntimeException ex) {
-            LOG.error("Error processing request id={}", req.id(), ex);
-            writeJson(
-                out,
-                new RpcErr("2.0", req.id(), Map.of("code", -32000, "message", ex.toString())));
           }
         }
         LOG.info("STDIO MCP shutting down");
       }
     }
+  }
+
+  private static Object processJsonNode(
+      JsonNode node,
+      LintService lint,
+      ExternalCompileService compile,
+      CssCompileService cssCompile,
+      GuideService guides,
+      NativeStubService nativeStubs,
+      ModeState mode) {
+    if (node == null || node.isNull()) {
+      return new RpcErr(
+          "2.0", null, Map.of("code", -32600, "message", "Invalid Request: empty payload"));
+    }
+    if (!node.isObject()) {
+      return new RpcErr(
+          "2.0",
+          null,
+          Map.of("code", -32600, "message", "Invalid Request: expected JSON object"));
+    }
+    RpcReq req;
+    try {
+      req = MAPPER.treeToValue(node, RpcReq.class);
+    } catch (JsonProcessingException e) {
+      LOG.warn("Failed to convert payload to request: {}", node, e);
+      return new RpcErr(
+          "2.0", null, Map.of("code", -32700, "message", "Parse error"));
+    }
+    LOG.debug(
+        "Received request id={} method={} params={}", req.id(), req.method(), req.params());
+    Object response =
+        executeRequest(req, lint, compile, cssCompile, guides, nativeStubs, mode);
+    if (response == null) {
+      return null;
+    }
+    if (response instanceof RpcRes res) {
+      LOG.debug("Completed request id={} method={}", res.id(), req.method());
+    }
+    return response;
+  }
+
+  private static Object executeRequest(
+      RpcReq req,
+      LintService lint,
+      ExternalCompileService compile,
+      CssCompileService cssCompile,
+      GuideService guides,
+      NativeStubService nativeStubs,
+      ModeState mode) {
+    try {
+      return dispatchRequest(req, lint, compile, cssCompile, guides, nativeStubs, mode);
+    } catch (RuntimeException ex) {
+      LOG.error("Error processing request id={}", req.id(), ex);
+      return new RpcErr(
+          "2.0", req.id(), Map.of("code", -32000, "message", ex.toString()));
+    }
+  }
+
+  private static Object dispatchRequest(
+      RpcReq req,
+      LintService lint,
+      ExternalCompileService compile,
+      CssCompileService cssCompile,
+      GuideService guides,
+      NativeStubService nativeStubs,
+      ModeState mode) {
+    String method = req.method();
+    if (method == null) {
+      return new RpcErr(
+          "2.0", req.id(), Map.of("code", -32600, "message", "Invalid Request: missing method"));
+    }
+    Map<String, Object> params = req.params() == null ? Map.of() : req.params();
+    return switch (method) {
+      case "initialize" -> handleInitialize(req, params);
+      case "server/info" -> handleServerInfo(req);
+      case "tools/list" -> handleToolsList(req);
+      case "tools/call" -> handleToolsCall(req, params, lint, compile, cssCompile, nativeStubs);
+      case "notifications/initialized", "initialized" -> handleNotification(req);
+      case "notifications/cancelled", "notifications/canceled", "requests/cancel" ->
+          handleNotification(req);
+      case "ping" -> handlePing(req);
+      case "prompts/list" -> handlePromptsList(req);
+      case "prompts/call" -> handlePromptsCall(req, params);
+      case "resources/list" -> handleResourcesList(req, guides, mode);
+      case "resources/read" -> handleResourcesRead(req, guides, mode, params);
+      case "modes/list" -> handleModesList(req, mode);
+      case "modes/set" -> handleModesSet(req, params, mode);
+      default ->
+          new RpcErr(
+              "2.0",
+              req.id(),
+              Map.of("code", -32601, "message", "Method not found: " + method));
+    };
   }
 
   private static ConfigurableApplicationContext createContext(String[] args) {
@@ -228,68 +339,49 @@ public final class StdIoMcpMain {
     return Map.copyOf(descriptor);
   }
 
-  private static void handleRequest(
-      RpcReq req,
-      BufferedWriter out,
-      LintService lint,
-      ExternalCompileService compile,
-      CssCompileService cssCompile,
-      GuideService guides,
-      NativeStubService nativeStubs,
-      ModeState mode)
-      throws IOException {
-    Map<String, Object> params = req.params() == null ? Map.of() : req.params();
-    switch (req.method()) {
-      case "initialize" -> handleInitialize(req, out, params);
-      case "tools/list" -> handleToolsList(req, out);
-      case "tools/call" ->
-          handleToolsCall(req, out, params, lint, compile, cssCompile, nativeStubs);
-      case "notifications/initialized", "ping" -> handleNotification(req, out);
-      case "prompts/list" -> handlePromptsList(req, out);
-      case "resources/list" -> handleResourcesList(req, out, guides, mode);
-      case "resources/read" -> handleResourcesRead(req, out, guides, mode, params);
-      case "modes/list" -> handleModesList(req, out, mode);
-      case "modes/set" -> handleModesSet(req, out, params, mode);
-      default ->
-          writeJson(
-              out,
-              new RpcErr(
-                  "2.0",
-                  req.id(),
-                  Map.of("code", -32601, "message", "Method not found: " + req.method())));
-    }
-  }
-
-  private static void handleInitialize(
-      RpcReq req, BufferedWriter out, Map<String, Object> params) throws IOException {
-    Map<String, Object> capabilities =
-        Map.of(
-            "tools", Map.of(),
-            "prompts", Map.of(),
-            "resources", Map.of(),
-            "modes", Map.of());
+  private static Object handleInitialize(RpcReq req, Map<String, Object> params) {
     Map<String, Object> result = new LinkedHashMap<>();
-    result.put("protocolVersion", params.getOrDefault("protocolVersion", "2025-06-18"));
-    result.put("serverInfo", Map.of("name", "cn1-mcp", "version", "0.1.0"));
-    result.put("capabilities", capabilities);
+    String negotiated = negotiateProtocolVersion(params);
+    if (negotiated == null) {
+      return new RpcErr(
+          "2.0",
+          req.id(),
+          Map.of(
+              "code",
+              -32602,
+              "message",
+              "Unsupported protocol version",
+              "data",
+              Map.of("supported", SUPPORTED_PROTOCOL_VERSIONS)));
+    }
+    result.put("protocolVersion", negotiated);
+    result.put("serverInfo", SERVER_INFO);
+    result.put("capabilities", SERVER_CAPABILITIES);
     LOG.info("Handled initialize request id={}", req.id());
-    writeJson(out, new RpcRes("2.0", req.id(), result));
+    return new RpcRes("2.0", req.id(), result);
   }
 
-  private static void handleToolsList(RpcReq req, BufferedWriter out) throws IOException {
+  private static Object handleServerInfo(RpcReq req) {
+    LOG.info("server/info requested for id={}", req.id());
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("serverInfo", SERVER_INFO);
+    result.put("protocolVersion", DEFAULT_PROTOCOL_VERSION);
+    result.put("capabilities", SERVER_CAPABILITIES);
+    return new RpcRes("2.0", req.id(), result);
+  }
+
+  private static Object handleToolsList(RpcReq req) {
     LOG.info("Listed tools for request id={} ({} tools)", req.id(), TOOL_DESCRIPTORS.size());
-    writeJson(out, new RpcRes("2.0", req.id(), Map.of("tools", TOOL_DESCRIPTORS)));
+    return new RpcRes("2.0", req.id(), Map.of("tools", TOOL_DESCRIPTORS));
   }
 
-  private static void handleToolsCall(
+  private static Object handleToolsCall(
       RpcReq req,
-      BufferedWriter out,
       Map<String, Object> params,
       LintService lint,
       ExternalCompileService compile,
       CssCompileService cssCompile,
-      NativeStubService nativeStubs)
-      throws IOException {
+      NativeStubService nativeStubs) {
     Object nameObj = params.get("name");
     if (!(nameObj instanceof String name)) {
       throw new IllegalArgumentException("Missing tool name");
@@ -336,14 +428,9 @@ public final class StdIoMcpMain {
     Map<String, Object> response =
         Map.of(
             "content",
-            List.of(
-                Map.of(
-                    "type",
-                    "text",
-                    "text",
-                    MAPPER.writeValueAsString(toolPayload))));
+            List.of(Map.of("type", "application/json", "json", toolPayload)));
     LOG.debug("Tool {} completed for request id={} -> {}", name, req.id(), toolPayload);
-    writeJson(out, new RpcRes("2.0", req.id(), response));
+    return new RpcRes("2.0", req.id(), response);
   }
 
   private static Map<String, Object> extractArguments(Map<String, Object> params) {
@@ -376,20 +463,45 @@ public final class StdIoMcpMain {
     return entries;
   }
 
-  private static void handleNotification(RpcReq req, BufferedWriter out) throws IOException {
+  private static Object handleNotification(RpcReq req) {
     LOG.debug("Received {} notification for id={}", req.method(), req.id());
     if (req.id() != null) {
-      writeJson(out, new RpcRes("2.0", req.id(), Map.of("ok", true)));
+      return new RpcRes("2.0", req.id(), Map.of("ok", Boolean.TRUE));
     }
+    return null;
   }
 
-  private static void handlePromptsList(RpcReq req, BufferedWriter out) throws IOException {
+  private static Object handlePing(RpcReq req) {
+    LOG.debug("Handled ping for id={}", req.id());
+    Map<String, Object> payload =
+        Map.of("content", List.of(Map.of("type", "text", "text", "pong")));
+    return new RpcRes("2.0", req.id(), payload);
+  }
+
+  private static Object handlePromptsList(RpcReq req) {
     LOG.info("Listing prompts for request id={}", req.id());
-    writeJson(out, new RpcRes("2.0", req.id(), Map.of("prompts", List.of())));
+    return new RpcRes("2.0", req.id(), Map.of("prompts", List.of()));
   }
 
-  private static void handleResourcesList(
-      RpcReq req, BufferedWriter out, GuideService guides, ModeState mode) throws IOException {
+  private static Object handlePromptsCall(RpcReq req, Map<String, Object> params) {
+    Object nameObj = params.get("name");
+    if (!(nameObj instanceof String name)) {
+      throw new IllegalArgumentException("Missing prompt name");
+    }
+    LOG.info("Prompt call {} for request id={}", name, req.id());
+    Map<String, Object> content =
+        Map.of(
+            "content",
+            List.of(
+                Map.of(
+                    "type",
+                    "text",
+                    "text",
+                    "Prompt '" + name + "' is not interactive; no output available.")));
+    return new RpcRes("2.0", req.id(), content);
+  }
+
+  private static Object handleResourcesList(RpcReq req, GuideService guides, ModeState mode) {
     LOG.info("Listing resources for request id={} mode={}", req.id(), mode.current);
     List<Map<String, Object>> resources;
     if (GUIDE_MODE.equals(mode.current)) {
@@ -407,16 +519,14 @@ public final class StdIoMcpMain {
     } else {
       resources = List.of();
     }
-    writeJson(out, new RpcRes("2.0", req.id(), Map.of("resources", resources)));
+    return new RpcRes("2.0", req.id(), Map.of("resources", resources));
   }
 
-  private static void handleResourcesRead(
+  private static Object handleResourcesRead(
       RpcReq req,
-      BufferedWriter out,
       GuideService guides,
       ModeState mode,
-      Map<String, Object> params)
-      throws IOException {
+      Map<String, Object> params) {
     if (!GUIDE_MODE.equals(mode.current)) {
       throw new IllegalStateException("Guide resources are only available in guide mode");
     }
@@ -441,7 +551,7 @@ public final class StdIoMcpMain {
       content.put("mimeType", "text/markdown");
       content.put("text", text);
       LOG.info("Read guide {} ({} chars) for request id={}", guideId, text.length(), req.id());
-      writeJson(out, new RpcRes("2.0", req.id(), Map.of("contents", List.of(content))));
+      return new RpcRes("2.0", req.id(), Map.of("contents", List.of(content)));
     } catch (IOException e) {
       LOG.error(
           "Failed to load guide {} for request id={}: {}",
@@ -449,17 +559,14 @@ public final class StdIoMcpMain {
           req.id(),
           e.getMessage(),
           e);
-      writeJson(
-          out,
-          new RpcErr(
-              "2.0",
-              req.id(),
-              Map.of("code", -32001, "message", "Failed to load guide: " + e.getMessage())));
+      return new RpcErr(
+          "2.0",
+          req.id(),
+          Map.of("code", -32001, "message", "Failed to load guide: " + e.getMessage()));
     }
   }
 
-  private static void handleModesList(RpcReq req, BufferedWriter out, ModeState mode)
-      throws IOException {
+  private static Object handleModesList(RpcReq req, ModeState mode) {
     LOG.info("Listing modes for request id={}", req.id());
     Map<String, Object> defaultDescriptor = new LinkedHashMap<>();
     defaultDescriptor.put("name", DEFAULT_MODE);
@@ -482,12 +589,11 @@ public final class StdIoMcpMain {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("modes", modes);
     result.put("current", mode.current);
-    writeJson(out, new RpcRes("2.0", req.id(), result));
+    return new RpcRes("2.0", req.id(), result);
   }
 
-  private static void handleModesSet(
-      RpcReq req, BufferedWriter out, Map<String, Object> params, ModeState mode)
-      throws IOException {
+  private static Object handleModesSet(
+      RpcReq req, Map<String, Object> params, ModeState mode) {
     Object requested = params.get("mode");
     if (!(requested instanceof String value)) {
       throw new IllegalArgumentException("Missing mode parameter for modes/set");
@@ -497,13 +603,33 @@ public final class StdIoMcpMain {
     }
     mode.current = value;
     LOG.info("Mode set to {} for request id={}", value, req.id());
-    writeJson(out, new RpcRes("2.0", req.id(), Map.of("mode", value)));
+    return new RpcRes("2.0", req.id(), Map.of("mode", value));
   }
 
   private static void writeJson(BufferedWriter out, Object obj) throws IOException {
     out.write(MAPPER.writeValueAsString(obj));
     out.write('\n');
     out.flush();
+  }
+
+  private static String negotiateProtocolVersion(Map<String, Object> params) {
+    Object requested = params.get("protocolVersion");
+    if (requested instanceof String version) {
+      if (SUPPORTED_PROTOCOL_VERSIONS.contains(version)) {
+        return version;
+      }
+      return null;
+    }
+    Object versions = params.get("protocolVersions");
+    if (versions instanceof List<?> list && !list.isEmpty()) {
+      for (String supported : SUPPORTED_PROTOCOL_VERSIONS) {
+        if (list.contains(supported)) {
+          return supported;
+        }
+      }
+      return null;
+    }
+    return DEFAULT_PROTOCOL_VERSION;
   }
 
   private static final class ModeState {
