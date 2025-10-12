@@ -254,14 +254,19 @@ public final class StdIoMcpMain {
     descriptor.put("description", "Explain a Codename One build or lint error message.");
     descriptor.put(
         "arguments",
-        List.of(
+        Map.of(
+            "type",
+            "object",
+            "properties",
             Map.of(
-                "name",
                 "message",
-                "type",
-                "string",
-                "description",
-                "The compiler, lint, or build error that needs clarification.")));
+                Map.of(
+                    "type",
+                    "string",
+                    "description",
+                    "The compiler, lint, or build error that needs clarification.")),
+            "required",
+            List.of("message")));
     return List.of(Map.copyOf(descriptor));
   }
 
@@ -521,7 +526,7 @@ public final class StdIoMcpMain {
   private static Object handleNotification(RpcReq req) {
     LOG.debug("Received {} notification for id={}", req.method(), req.id());
     if (req.id() != null) {
-      return new RpcRes("2.0", req.id(), Map.of("ok", Boolean.TRUE));
+      return new RpcRes("2.0", req.id(), Map.of());
     }
     return null;
   }
@@ -561,7 +566,9 @@ public final class StdIoMcpMain {
     Map<String, Object> content =
         Map.of(
             "content",
-            List.of(Map.of("type", "text", "text", output)));
+            List.of(Map.of("type", "text", "text", output)),
+            "metadata",
+            Map.of());
     return new RpcRes("2.0", req.id(), content);
   }
 
@@ -682,9 +689,9 @@ public final class StdIoMcpMain {
       if (SUPPORTED_PROTOCOL_VERSIONS.contains(version)) {
         return version;
       }
-      LOG.warn("Unsupported protocolVersion '{}' requested, falling back to {}", version,
-          DEFAULT_PROTOCOL_VERSION);
-      return DEFAULT_PROTOCOL_VERSION;
+      LOG.warn(
+          "Unsupported protocolVersion '{}' requested; returning error", version);
+      return null;
     }
     Object versions = params.get("protocolVersions");
     if (versions instanceof List<?> list && !list.isEmpty()) {
@@ -693,11 +700,8 @@ public final class StdIoMcpMain {
           return supported;
         }
       }
-      LOG.warn(
-          "Unsupported protocolVersions {} requested, falling back to {}",
-          list,
-          DEFAULT_PROTOCOL_VERSION);
-      return DEFAULT_PROTOCOL_VERSION;
+      LOG.warn("No compatible protocolVersions {} requested; returning error", list);
+      return null;
     }
     return DEFAULT_PROTOCOL_VERSION;
   }
