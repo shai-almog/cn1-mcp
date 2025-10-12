@@ -26,6 +26,7 @@ SOURCE_BASES = [
 
 
 MCP_COMPLIANCE_LOG = TARGET_DIR / "mcp-compliance-stdio.log"
+MCP_COMPLIANCE_EXIT_CODE = os.environ.get("MCP_COMPLIANCE_EXIT_CODE")
 
 
 @dataclass
@@ -120,6 +121,31 @@ def _relative_path(raw_path: Optional[str]) -> str:
     return potential[0] if potential else normalized
 
 
+def _strip_timestamp(line: str) -> str:
+    if line.startswith("[") and "] " in line:
+        return line.split("] ", 1)[1]
+    return line
+
+
+def _extract_mcp_summary(lines: List[str]) -> List[str]:
+    summary_lines: List[str] = []
+    summary_index: Optional[int] = None
+    for idx, line in enumerate(lines):
+        if "Compliance Test Results" in line:
+            summary_index = idx
+            break
+    if summary_index is None:
+        return summary_lines
+    for raw in lines[summary_index + 1 :]:
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if not stripped.startswith("["):
+            break
+        summary_lines.append(_strip_timestamp(stripped))
+    return summary_lines
+
+
 def _read_mcp_compliance_log(max_lines: int = 200) -> Optional[List[str]]:
     if not MCP_COMPLIANCE_LOG.exists():
         return None
@@ -138,7 +164,18 @@ def _read_mcp_compliance_log(max_lines: int = 200) -> Optional[List[str]]:
     header: Optional[str] = None
     if total > max_lines:
         header = f"_Showing last {max_lines} of {total} lines._"
-    block: List[str] = ["<details><summary>STDIO compliance report</summary>", ""]
+    summary_lines = _extract_mcp_summary(lines)
+    summary_block: List[str] = []
+    if summary_lines or MCP_COMPLIANCE_EXIT_CODE is not None:
+        summary_block.extend(["**Summary**", ""])
+        summary_block.extend(f"- {line}" for line in summary_lines)
+        if MCP_COMPLIANCE_EXIT_CODE is not None:
+            exit_note = f"- Command exit code: `{MCP_COMPLIANCE_EXIT_CODE}`"
+            if MCP_COMPLIANCE_EXIT_CODE != "0":
+                exit_note += " (non-zero)"
+            summary_block.append(exit_note)
+        summary_block.append("")
+    block: List[str] = summary_block + ["<details><summary>STDIO compliance report</summary>", ""]
     if header:
         block.extend([header, ""])
     block.extend(["```", "\n".join(truncated_lines), "```", "", "</details>"])
