@@ -62,7 +62,7 @@ jobs:
           log_path="target/mcp-compliance-stdio.log"
           set +e
           python -m mcp_testing.scripts.compliance_report \
-            --protocol-version 2025-06-18 \
+            --protocol-version 2025-03-26 \
             --test-timeout 60 \
             --tools-timeout 30 \
             --server-command "env SPRING_PROFILES_ACTIVE=stdio java -Dloader.main=com.codename1.server.stdiomcp.StdIoMcpMain -jar ${jar_path}" \
