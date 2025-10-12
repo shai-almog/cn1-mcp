@@ -27,7 +27,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.WebApplicationType;
@@ -42,10 +41,11 @@ public final class StdIoMcpMain {
   private static final String DEFAULT_MODE = "default";
   private static final String GUIDE_MODE = "cn1_guide";
   private static final List<Map<String, Object>> TOOL_DESCRIPTORS = createToolDescriptors();
-  private static final String DEFAULT_PROTOCOL_VERSION = "2024-11-05";
-  private static final Set<String> SUPPORTED_PROTOCOL_VERSIONS =
-      Set.of(DEFAULT_PROTOCOL_VERSION);
-  private static final Map<String, Object> SERVER_INFO = Map.of("name", "cn1-mcp", "version", "0.1.0");
+  private static final List<String> SUPPORTED_PROTOCOL_VERSIONS =
+      List.of("2025-06-18", "2024-11-05");
+  private static final String DEFAULT_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS.get(0);
+  private static final Map<String, Object> SERVER_INFO =
+      Map.of("name", "cn1-mcp", "version", "0.1.0");
   private static final Map<String, Object> SERVER_CAPABILITIES =
       Map.of(
           "tools", Map.of("list", Map.of(), "call", Map.of()),
@@ -618,7 +618,8 @@ public final class StdIoMcpMain {
       if (SUPPORTED_PROTOCOL_VERSIONS.contains(version)) {
         return version;
       }
-      LOG.warn("Unsupported protocolVersion '{}' requested, falling back to default", version);
+      LOG.warn("Unsupported protocolVersion '{}' requested, falling back to {}", version,
+          DEFAULT_PROTOCOL_VERSION);
       return DEFAULT_PROTOCOL_VERSION;
     }
     Object versions = params.get("protocolVersions");
@@ -628,7 +629,10 @@ public final class StdIoMcpMain {
           return supported;
         }
       }
-      LOG.warn("Unsupported protocolVersions {} requested, falling back to default", list);
+      LOG.warn(
+          "Unsupported protocolVersions {} requested, falling back to {}",
+          list,
+          DEFAULT_PROTOCOL_VERSION);
       return DEFAULT_PROTOCOL_VERSION;
     }
     return DEFAULT_PROTOCOL_VERSION;
