@@ -42,7 +42,7 @@ public final class StdIoMcpMain {
   private static final String GUIDE_MODE = "cn1_guide";
   private static final List<Map<String, Object>> TOOL_DESCRIPTORS = createToolDescriptors();
   private static final List<String> SUPPORTED_PROTOCOL_VERSIONS =
-          List.of("2025-03-26", "2024-11-05"); 
+          List.of("2025-06-18", "2025-03-26", "2024-11-05");
   private static final String DEFAULT_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS.get(0);
   private static final String SERVER_NAME = "cn1-mcp";
   private static final String SERVER_VERSION = "0.1.0";
@@ -679,28 +679,31 @@ public final class StdIoMcpMain {
     out.flush();
   }
 
+  // Prefer the client's list if provided; otherwise consider the single field.
   private static String negotiateProtocolVersion(Map<String, Object> params) {
+    Object versions = params.get("protocolVersions");
+    if (versions instanceof List<?> list && !list.isEmpty()) {
+      // Honor the client’s preference order
+      for (Object v : list) {
+        if (v instanceof String s && SUPPORTED_PROTOCOL_VERSIONS.contains(s)) {
+          return s;
+        }
+      }
+      // No overlap; fall back to our default
+      return DEFAULT_PROTOCOL_VERSION;
+    }
+
     Object requested = params.get("protocolVersion");
     if (requested instanceof String version) {
       if (SUPPORTED_PROTOCOL_VERSIONS.contains(version)) {
+        // Echo exactly if we support it (client sent only a single choice)
         return version;
       }
-      LOG.warn(
-          "Unsupported protocolVersion '{}' requested; falling back to default", version);
+      // Client gave an unsupported single; choose a supported default
       return DEFAULT_PROTOCOL_VERSION;
     }
-    Object versions = params.get("protocolVersions");
-    if (versions instanceof List<?> list && !list.isEmpty()) {
-      for (String supported : SUPPORTED_PROTOCOL_VERSIONS) {
-        if (list.contains(supported)) {
-          return supported;
-        }
-      }
-      LOG.warn(
-          "No compatible protocolVersions {} requested; falling back to default",
-          list);
-      return DEFAULT_PROTOCOL_VERSION;
-    }
+
+    // Nothing specified; return default
     return DEFAULT_PROTOCOL_VERSION;
   }
 
