@@ -41,17 +41,25 @@ public final class StdIoMcpMain {
   private static final String DEFAULT_MODE = "default";
   private static final String GUIDE_MODE = "cn1_guide";
   private static final List<Map<String, Object>> TOOL_DESCRIPTORS = createToolDescriptors();
-  private static final List<String> SUPPORTED_PROTOCOL_VERSIONS =
-      List.of("2025-06-18", "2024-11-05");
+  private static final List<String> SUPPORTED_PROTOCOL_VERSIONS = List.of("2024-11-05");
   private static final String DEFAULT_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS.get(0);
+  private static final String SERVER_NAME = "cn1-mcp";
+  private static final String SERVER_VERSION = "0.1.0";
   private static final Map<String, Object> SERVER_INFO =
-      Map.of("name", "cn1-mcp", "version", "0.1.0");
+      Map.of(
+          "name",
+          SERVER_NAME,
+          "version",
+          SERVER_VERSION,
+          "supportedVersions",
+          SUPPORTED_PROTOCOL_VERSIONS);
   private static final Map<String, Object> SERVER_CAPABILITIES =
       Map.of(
           "tools", Map.of("list", Map.of(), "call", Map.of()),
           "prompts", Map.of("list", Map.of(), "call", Map.of()),
           "resources", Map.of("list", Map.of(), "read", Map.of()),
           "modes", Map.of("list", Map.of(), "set", Map.of()));
+  private static final List<Map<String, Object>> PROMPT_DESCRIPTORS = createPromptDescriptors();
 
   private StdIoMcpMain() {}
 
@@ -239,6 +247,23 @@ public final class StdIoMcpMain {
     return List.copyOf(descriptors);
   }
 
+  private static List<Map<String, Object>> createPromptDescriptors() {
+    Map<String, Object> descriptor = new LinkedHashMap<>();
+    descriptor.put("name", "cn1_explain_error");
+    descriptor.put("description", "Explain a Codename One build or lint error message.");
+    descriptor.put(
+        "arguments",
+        List.of(
+            Map.of(
+                "name",
+                "message",
+                "type",
+                "string",
+                "description",
+                "The compiler, lint, or build error that needs clarification.")));
+    return List.of(Map.copyOf(descriptor));
+  }
+
   private static Map<String, Object> lintToolDescriptor() {
     Map<String, Object> descriptor = new LinkedHashMap<>();
     descriptor.put("name", "cn1_lint_code");
@@ -253,6 +278,16 @@ public final class StdIoMcpMain {
             "required",
             List.of("code")));
     return Map.copyOf(descriptor);
+  }
+
+  private static Map<String, Object> buildServerMetadata() {
+    Map<String, Object> metadata = new LinkedHashMap<>();
+    metadata.put("name", SERVER_NAME);
+    metadata.put("version", SERVER_VERSION);
+    metadata.put("supportedVersions", SUPPORTED_PROTOCOL_VERSIONS);
+    metadata.put("serverInfo", SERVER_INFO);
+    metadata.put("capabilities", SERVER_CAPABILITIES);
+    return metadata;
   }
 
   private static Map<String, Object> compileToolDescriptor() {
@@ -340,7 +375,7 @@ public final class StdIoMcpMain {
   }
 
   private static Object handleInitialize(RpcReq req, Map<String, Object> params) {
-    Map<String, Object> result = new LinkedHashMap<>();
+    Map<String, Object> result = buildServerMetadata();
     String negotiated = negotiateProtocolVersion(params);
     if (negotiated == null) {
       return new RpcErr(
@@ -355,18 +390,14 @@ public final class StdIoMcpMain {
               Map.of("supported", SUPPORTED_PROTOCOL_VERSIONS)));
     }
     result.put("protocolVersion", negotiated);
-    result.put("serverInfo", SERVER_INFO);
-    result.put("capabilities", SERVER_CAPABILITIES);
     LOG.info("Handled initialize request id={}", req.id());
     return new RpcRes("2.0", req.id(), result);
   }
 
   private static Object handleServerInfo(RpcReq req) {
     LOG.info("server/info requested for id={}", req.id());
-    Map<String, Object> result = new LinkedHashMap<>();
-    result.put("serverInfo", SERVER_INFO);
+    Map<String, Object> result = buildServerMetadata();
     result.put("protocolVersion", DEFAULT_PROTOCOL_VERSION);
-    result.put("capabilities", SERVER_CAPABILITIES);
     return new RpcRes("2.0", req.id(), result);
   }
 
@@ -391,17 +422,26 @@ public final class StdIoMcpMain {
     switch (name) {
       case "cn1_lint_code" -> {
         String code = (String) arguments.get("code");
+        if (code == null) {
+          throw new IllegalArgumentException("Missing required argument 'code'");
+        }
         int length = code != null ? code.length() : 0;
         LOG.info("Invoking lint tool for request id={} ({} chars)", req.id(), length);
         toolPayload = lint.lint(new LintRequest(code, "java", List.of()));
       }
       case "cn1_compile_check" -> {
         List<FileEntry> files = buildFiles(arguments);
+        if (files.isEmpty()) {
+          throw new IllegalArgumentException("Missing required argument 'files'");
+        }
         LOG.info("Invoking compile tool for request id={} ({} files)", req.id(), files.size());
         toolPayload = compile.compile(new CompileRequest(files, null));
       }
       case "cn1_compile_css" -> {
         List<FileEntry> files = buildFiles(arguments);
+        if (files.isEmpty()) {
+          throw new IllegalArgumentException("Missing required argument 'files'");
+        }
         String inputPath = (String) arguments.get("inputPath");
         String outputPath = (String) arguments.get("outputPath");
         LOG.info(
@@ -414,7 +454,13 @@ public final class StdIoMcpMain {
       }
       case "cn1_generate_native_stubs" -> {
         List<FileEntry> files = buildFiles(arguments);
+        if (files.isEmpty()) {
+          throw new IllegalArgumentException("Missing required argument 'files'");
+        }
         String interfaceName = (String) arguments.get("interfaceName");
+        if (interfaceName == null || interfaceName.isBlank()) {
+          throw new IllegalArgumentException("Missing required argument 'interfaceName'");
+        }
         LOG.info(
             "Invoking native stub generator for request id={} interface={} ({} files)",
             req.id(),
@@ -446,19 +492,27 @@ public final class StdIoMcpMain {
   private static List<FileEntry> buildFiles(Map<String, Object> arguments) {
     Object filesObj = arguments.get("files");
     if (!(filesObj instanceof List<?> rawList)) {
-      return List.of();
+      throw new IllegalArgumentException("Missing required argument 'files'");
+    }
+    if (rawList.isEmpty()) {
+      throw new IllegalArgumentException("Missing required argument 'files'");
     }
     List<FileEntry> entries = new ArrayList<>();
     for (Object element : rawList) {
-      if (element instanceof Map<?, ?> map) {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> cast = (Map<String, Object>) map;
-        String path = (String) cast.get("path");
-        String content = (String) cast.get("content");
-        if (path != null && content != null) {
-          entries.add(new FileEntry(path, content));
-        }
+      if (!(element instanceof Map<?, ?> map)) {
+        throw new IllegalArgumentException("Each file must be an object with path and content");
       }
+      @SuppressWarnings("unchecked")
+      Map<String, Object> cast = (Map<String, Object>) map;
+      String path = (String) cast.get("path");
+      String content = (String) cast.get("content");
+      if (path == null || content == null) {
+        throw new IllegalArgumentException("Each file requires 'path' and 'content' fields");
+      }
+      entries.add(new FileEntry(path, content));
+    }
+    if (entries.isEmpty()) {
+      throw new IllegalArgumentException("Missing required argument 'files'");
     }
     return entries;
   }
@@ -473,14 +527,12 @@ public final class StdIoMcpMain {
 
   private static Object handlePing(RpcReq req) {
     LOG.debug("Handled ping for id={}", req.id());
-    Map<String, Object> payload =
-        Map.of("content", List.of(Map.of("type", "text", "text", "pong")));
-    return new RpcRes("2.0", req.id(), payload);
+    return new RpcRes("2.0", req.id(), Map.of());
   }
 
   private static Object handlePromptsList(RpcReq req) {
     LOG.info("Listing prompts for request id={}", req.id());
-    return new RpcRes("2.0", req.id(), Map.of("prompts", List.of()));
+    return new RpcRes("2.0", req.id(), Map.of("prompts", PROMPT_DESCRIPTORS));
   }
 
   private static Object handlePromptsCall(RpcReq req, Map<String, Object> params) {
@@ -489,15 +541,26 @@ public final class StdIoMcpMain {
       throw new IllegalArgumentException("Missing prompt name");
     }
     LOG.info("Prompt call {} for request id={}", name, req.id());
+    Map<String, Object> arguments = extractArguments(params);
+    String output;
+    if ("cn1_explain_error".equals(name)) {
+      String message = (String) arguments.get("message");
+      if (message == null || message.isBlank()) {
+        throw new IllegalArgumentException("Missing required argument 'message'");
+      }
+      output =
+          "The Codename One tooling received the following error:\n\n"
+              + message
+              + "\n\n"
+              + "Try cleaning the project, ensuring all libraries are present, and rerunning lint.";
+    } else {
+      throw new IllegalArgumentException("Unknown prompt: " + name);
+    }
+
     Map<String, Object> content =
         Map.of(
             "content",
-            List.of(
-                Map.of(
-                    "type",
-                    "text",
-                    "text",
-                    "Prompt '" + name + "' is not interactive; no output available.")));
+            List.of(Map.of("type", "text", "text", output)));
     return new RpcRes("2.0", req.id(), content);
   }
 
