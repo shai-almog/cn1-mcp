@@ -227,7 +227,7 @@
                                                 <groupId>org.springframework.boot</groupId>
                                                 <artifactId>spring-boot-maven-plugin</artifactId>
                                                 <configuration>
-                                                        <mainClass>com.codename1.server.mcp.McpApplication</mainClass>
+                                                        <mainClass>com.codename1.server.mcp.StdIoMcpApplication</mainClass>
                                                         <layout>ZIP</layout>
                                                 </configuration>
                                         </plugin>
@@ -237,7 +237,7 @@
                                                 <version>0.10.5</version>
                                                 <configuration>
                                                         <imageName>${native.image.name}</imageName>
-                                                        <mainClass>com.codename1.server.mcp.McpApplication</mainClass>
+                                                        <mainClass>com.codename1.server.mcp.StdIoMcpApplication</mainClass>
                                                         <fallback>false</fallback>
                                                         <quickBuild>false</quickBuild>
                                                 </configuration>
