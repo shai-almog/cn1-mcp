@@ -14,7 +14,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /** Integration tests that exercise the MCP server using the official Java SDK. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {
+      // Ensure the HTTP transport is active even if callers export SPRING_PROFILES_ACTIVE=stdio.
+      "spring.main.web-application-type=servlet",
+      "spring.ai.mcp.server.stdio=false"
+    })
 class McpServerIntegrationTest {
 
   @LocalServerPort private int localPort;
