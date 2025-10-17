@@ -30,10 +30,33 @@
                 <java.version>21</java.version>
                 <native.image.name>cn1-mcp-stdio</native.image.name>
         </properties>
-	<dependencies>
+        <dependencyManagement>
+                <dependencies>
+                        <dependency>
+                                <groupId>io.modelcontextprotocol.sdk</groupId>
+                                <artifactId>mcp-bom</artifactId>
+                                <version>0.14.1</version>
+                                <type>pom</type>
+                                <scope>import</scope>
+                        </dependency>
+                        <dependency>
+                                <groupId>org.springframework.ai</groupId>
+                                <artifactId>spring-ai-bom</artifactId>
+                                <version>1.1.0-M3</version>
+                                <type>pom</type>
+                                <scope>import</scope>
+                        </dependency>
+                </dependencies>
+        </dependencyManagement>
+        <dependencies>
                 <dependency>
-                        <groupId>org.springframework.boot</groupId>
-                        <artifactId>spring-boot-starter-web</artifactId>
+                        <groupId>io.modelcontextprotocol.sdk</groupId>
+                        <artifactId>mcp</artifactId>
+                </dependency>
+
+                <dependency>
+                        <groupId>org.springframework.ai</groupId>
+                        <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
                 </dependency>
 
                 <dependency>
@@ -70,19 +93,25 @@
                         <scope>provided</scope>
                 </dependency>
 
-		<dependency>
-			<groupId>org.mockito</groupId>
-			<artifactId>mockito-inline</artifactId>
-			<version>5.2.0</version>
-			<scope>test</scope>
-		</dependency>
+                <dependency>
+                        <groupId>org.mockito</groupId>
+                        <artifactId>mockito-inline</artifactId>
+                        <version>5.2.0</version>
+                        <scope>test</scope>
+                </dependency>
 
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-	</dependencies>
+                <dependency>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-starter-test</artifactId>
+                        <scope>test</scope>
+                </dependency>
+
+                <dependency>
+                        <groupId>io.modelcontextprotocol.sdk</groupId>
+                        <artifactId>mcp-test</artifactId>
+                        <scope>test</scope>
+                </dependency>
+        </dependencies>
 
         <build>
                 <plugins>
@@ -198,7 +227,7 @@
                                                 <groupId>org.springframework.boot</groupId>
                                                 <artifactId>spring-boot-maven-plugin</artifactId>
                                                 <configuration>
-                                                        <mainClass>com.codename1.server.mcp.McpApplication</mainClass>
+                                                        <mainClass>com.codename1.server.mcp.StdIoMcpApplication</mainClass>
                                                         <layout>ZIP</layout>
                                                 </configuration>
                                         </plugin>
@@ -208,7 +237,7 @@
                                                 <version>0.10.5</version>
                                                 <configuration>
                                                         <imageName>${native.image.name}</imageName>
-                                                        <mainClass>com.codename1.server.stdiomcp.StdIoMcpMain</mainClass>
+                                                        <mainClass>com.codename1.server.mcp.StdIoMcpApplication</mainClass>
                                                         <fallback>false</fallback>
                                                         <quickBuild>false</quickBuild>
                                                 </configuration>
