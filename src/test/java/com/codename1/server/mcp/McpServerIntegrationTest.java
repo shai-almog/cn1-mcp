@@ -10,15 +10,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
+import org.springframework.boot.test.web.server.LocalServerPort;
 
 /** Integration tests that exercise the MCP server using the official Java SDK. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class McpServerIntegrationTest {
 
-  @Autowired private ApplicationContext applicationContext;
+  @LocalServerPort private int localPort;
 
   @Test
   void exposesCodenameOneToolsOverSseTransport() {
@@ -54,17 +53,8 @@ class McpServerIntegrationTest {
   }
 
   private HttpClientSseClientTransport createTransport() {
-    int port = getLocalPort();
-    return HttpClientSseClientTransport.builder("http://localhost:" + port)
+    return HttpClientSseClientTransport.builder("http://localhost:" + localPort)
         .sseEndpoint("/sse")
         .build();
-  }
-
-  private int getLocalPort() {
-    String value = applicationContext.getEnvironment().getProperty("local.server.port");
-    if (value == null) {
-      throw new IllegalStateException("local.server.port property is not set");
-    }
-    return Integer.parseInt(value);
   }
 }
