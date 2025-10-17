@@ -24,8 +24,10 @@ import com.codename1.server.mcp.service.ScaffoldService;
 import com.codename1.server.mcp.service.SnippetService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
+import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
@@ -44,6 +46,17 @@ public class CodenameOneMcpTools {
   private final NativeStubService nativeStubService;
   private final ObjectMapper objectMapper;
 
+  /**
+   * Creates the MCP tool registry backed by the Codename One services.
+   *
+   * @param lintService Codename One lint service
+   * @param compileService Codename One Java compile service
+   * @param cssCompileService Codename One CSS compile service
+   * @param scaffoldService Codename One project scaffolding service
+   * @param snippetService Codename One snippet retrieval service
+   * @param nativeStubService Codename One native stub generation service
+   * @param objectMapper Jackson mapper used to serialise tool payloads
+   */
   public CodenameOneMcpTools(
       LintService lintService,
       ExternalCompileService compileService,
@@ -52,15 +65,23 @@ public class CodenameOneMcpTools {
       SnippetService snippetService,
       NativeStubService nativeStubService,
       ObjectMapper objectMapper) {
-    this.lintService = lintService;
-    this.compileService = compileService;
-    this.cssCompileService = cssCompileService;
-    this.scaffoldService = scaffoldService;
-    this.snippetService = snippetService;
-    this.nativeStubService = nativeStubService;
-    this.objectMapper = objectMapper;
+    this.lintService = Objects.requireNonNull(lintService, "lintService");
+    this.compileService = Objects.requireNonNull(compileService, "compileService");
+    this.cssCompileService = Objects.requireNonNull(cssCompileService, "cssCompileService");
+    this.scaffoldService = Objects.requireNonNull(scaffoldService, "scaffoldService");
+    this.snippetService = Objects.requireNonNull(snippetService, "snippetService");
+    this.nativeStubService = Objects.requireNonNull(nativeStubService, "nativeStubService");
+    this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
   }
 
+  /**
+   * Runs the Codename One lint tool.
+   *
+   * @param code Java source code to lint
+   * @param language the language identifier, typically {@code java}
+   * @param ruleset optional set of lint rule identifiers
+   * @return structured lint result payload
+   */
   @McpTool(name = "cn1_lint_code", description = "Lint Java for Codename One")
   public McpSchema.CallToolResult lint(
       @McpToolParam(description = "Java source code to lint", required = true) String code,
@@ -71,6 +92,13 @@ public class CodenameOneMcpTools {
     return structuredResult(response);
   }
 
+  /**
+   * Verifies the supplied files compile using the Codename One toolchain.
+   *
+   * @param files files that make up the compilation unit
+   * @param classpathHint optional classpath hint
+   * @return structured compile result payload
+   */
   @McpTool(name = "cn1_compile_check", description = "Verify code compiles in Codename One")
   public McpSchema.CallToolResult compile(
       @McpToolParam(description = "Files to compile", required = true) List<FileEntry> files,
@@ -79,6 +107,14 @@ public class CodenameOneMcpTools {
     return structuredResult(response);
   }
 
+  /**
+   * Compiles Codename One CSS themes.
+   *
+   * @param files CSS files required for compilation
+   * @param inputPath primary theme input file
+   * @param outputPath optional compiled CSS destination
+   * @return structured CSS compile payload
+   */
   @McpTool(name = "cn1_compile_css", description = "Compile Codename One CSS themes")
   public McpSchema.CallToolResult compileCss(
       @McpToolParam(description = "CSS files to compile", required = true) List<FileEntry> files,
@@ -89,16 +125,31 @@ public class CodenameOneMcpTools {
     return structuredResult(response);
   }
 
+  /**
+   * Scaffolds a new Codename One project structure.
+   *
+   * @param name display name for the generated project
+   * @param pkg base package for generated Java sources
+   * @param features optional list of feature identifiers
+   * @return structured scaffold payload
+   */
   @McpTool(name = "cn1_scaffold_project", description = "Scaffold a new Codename One project")
   public McpSchema.CallToolResult scaffold(
       @McpToolParam(description = "Display name for the project", required = true) String name,
       @McpToolParam(description = "Base Java package for generated sources", required = true)
           String pkg,
       @McpToolParam(description = "Optional feature identifiers to include") List<String> features) {
-    ScaffoldResponse response = scaffoldService.scaffold(new ScaffoldRequest(name, pkg, features));
+    ScaffoldResponse response =
+        scaffoldService.scaffold(new ScaffoldRequest(name, pkg, features));
     return structuredResult(response);
   }
 
+  /**
+   * Explains a Codename One lint rule.
+   *
+   * @param ruleId Codename One lint rule identifier
+   * @return structured explanation payload
+   */
   @McpTool(name = "cn1_explain_violation", description = "Explain a Codename One lint rule")
   public McpSchema.CallToolResult explain(
       @McpToolParam(description = "Codename One lint rule identifier", required = true) String ruleId) {
@@ -106,6 +157,12 @@ public class CodenameOneMcpTools {
     return structuredResult(response);
   }
 
+  /**
+   * Searches Codename One tutorial snippets for the given topic.
+   *
+   * @param topic topic to search for
+   * @return structured snippet search payload
+   */
   @McpTool(name = "cn1_search_snippets", description = "Search Codename One tutorial snippets")
   public McpSchema.CallToolResult searchSnippets(
       @McpToolParam(description = "Topic keyword", required = true) String topic) {
@@ -113,6 +170,13 @@ public class CodenameOneMcpTools {
     return structuredResult(response);
   }
 
+  /**
+   * Generates an automatic fix for common Codename One issues.
+   *
+   * @param code source code to patch
+   * @param diagnostics diagnostics describing issues to fix
+   * @return structured auto-fix payload
+   */
   @McpTool(name = "cn1_auto_fix", description = "Auto-fix common Codename One issues")
   public McpSchema.CallToolResult autoFix(
       @McpToolParam(description = "Source code to patch", required = true) String code,
@@ -137,6 +201,13 @@ public class CodenameOneMcpTools {
     return structuredResult(response);
   }
 
+  /**
+   * Generates native interface stubs for Codename One.
+   *
+   * @param files compilation unit source files
+   * @param interfaceName fully qualified native interface name
+   * @return structured native stub payload
+   */
   @McpTool(
       name = "cn1_generate_native_stubs",
       description = "Generate native interface stubs for Codename One")
@@ -154,8 +225,11 @@ public class CodenameOneMcpTools {
     McpSchema.CallToolResult.Builder builder =
         McpSchema.CallToolResult.builder().isError(Boolean.FALSE);
     if (value != null) {
-      Map<String, Object> structured = objectMapper.convertValue(value, Map.class);
-      builder.structuredContent(structured);
+      Map<String, Object> structured =
+          objectMapper.convertValue(value, new TypeReference<Map<String, Object>>() {});
+      if (structured != null) {
+        builder.structuredContent(Map.copyOf(structured));
+      }
     }
     return builder.build();
   }
