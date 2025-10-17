@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.mcp.server.common.autoconfigure.properties.McpServerSseProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
@@ -18,8 +17,6 @@ import org.springframework.context.ApplicationContext;
 /** Integration tests that exercise the MCP server using the official Java SDK. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class McpServerIntegrationTest {
-
-  @Autowired private McpServerSseProperties sseProperties;
 
   @Autowired private ApplicationContext applicationContext;
 
@@ -58,18 +55,9 @@ class McpServerIntegrationTest {
 
   private HttpClientSseClientTransport createTransport() {
     int port = getLocalPort();
-    String baseUri = "http://localhost:" + port;
-    String basePath = sseProperties.getBaseUrl();
-    if (basePath != null && !basePath.isBlank()) {
-      baseUri += basePath.startsWith("/") ? basePath : "/" + basePath;
-    }
-    HttpClientSseClientTransport.Builder builder =
-        HttpClientSseClientTransport.builder(baseUri);
-    String sseEndpoint = sseProperties.getSseEndpoint();
-    if (sseEndpoint != null && !sseEndpoint.isBlank()) {
-      builder.sseEndpoint(sseEndpoint);
-    }
-    return builder.build();
+    return HttpClientSseClientTransport.builder("http://localhost:" + port)
+        .sseEndpoint("/sse")
+        .build();
   }
 
   private int getLocalPort() {
