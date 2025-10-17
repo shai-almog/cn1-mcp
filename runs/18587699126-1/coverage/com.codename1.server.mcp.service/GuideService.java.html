@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GuideService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mcp</a> &gt; <a href="index.source.html" class="el_package">com.codename1.server.mcp.service</a> &gt; <span class="el_source">GuideService.java</span></div><h1>GuideService.java</h1><pre class="source lang-java linenums">package com.codename1.server.mcp.service;
+
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.stereotype.Service;
+
+/**
+ * Discovers the markdown guides bundled with the MCP server and exposes simple metadata and content
+ * loading helpers so they can be surfaced via guide/intro mode.
+ */
+@Service
+public class GuideService {
+<span class="fc" id="L28">  private static final Logger LOG = LoggerFactory.getLogger(GuideService.class);</span>
+  private final List&lt;GuideDoc&gt; guides;
+  private final Map&lt;String, GuideDoc&gt; guidesById;
+
+  /**
+   * Creates a guide service that loads markdown documents from the classpath.
+   *
+   * @param resolver resource resolver used to discover guide markdown files
+   */
+  @SuppressFBWarnings(
+      value = &quot;CT_CONSTRUCTOR_THROW&quot;,
+      justification = &quot;Fail fast when bundled guides cannot be enumerated&quot;)
+<span class="fc" id="L40">  public GuideService(ResourcePatternResolver resolver) {</span>
+<span class="fc" id="L41">    List&lt;GuideDoc&gt; discovered = new ArrayList&lt;&gt;();</span>
+    try {
+<span class="fc bfc" id="L43" title="All 2 branches covered.">      for (Resource resource : resolver.getResources(&quot;classpath:/static/docs/*.md&quot;)) {</span>
+<span class="pc bpc" id="L44" title="2 of 4 branches missed.">        if (resource == null || !resource.exists()) {</span>
+<span class="nc" id="L45">          continue;</span>
+        }
+<span class="fc" id="L47">        String filename = resource.getFilename();</span>
+<span class="pc bpc" id="L48" title="1 of 2 branches missed.">        if (filename == null) {</span>
+<span class="nc" id="L49">          continue;</span>
+        }
+<span class="fc" id="L51">        String id = toId(filename);</span>
+<span class="fc" id="L52">        String title = toTitle(filename);</span>
+<span class="fc" id="L53">        String description = title + &quot; (Codename One guide)&quot;;</span>
+<span class="fc" id="L54">        GuideDoc guide = new GuideDoc(id, title, description, resource);</span>
+<span class="fc" id="L55">        LOG.debug(&quot;Registered guide {} from resource {}&quot;, id, resource);</span>
+<span class="fc" id="L56">        discovered.add(guide);</span>
+      }
+<span class="nc" id="L58">    } catch (IOException e) {</span>
+<span class="nc" id="L59">      throw new IllegalStateException(&quot;Failed to discover bundled guides&quot;, e);</span>
+<span class="fc" id="L60">    }</span>
+
+<span class="fc" id="L62">    discovered.sort((a, b) -&gt; a.id().compareToIgnoreCase(b.id()));</span>
+<span class="fc" id="L63">    this.guides = Collections.unmodifiableList(discovered);</span>
+<span class="fc" id="L64">    Map&lt;String, GuideDoc&gt; map = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L65" title="All 2 branches covered.">    for (GuideDoc guide : discovered) {</span>
+<span class="fc" id="L66">      map.put(guide.id(), guide);</span>
+<span class="fc" id="L67">    }</span>
+<span class="fc" id="L68">    this.guidesById = Collections.unmodifiableMap(map);</span>
+<span class="fc" id="L69">    LOG.info(&quot;Discovered {} bundled guide(s)&quot;, this.guides.size());</span>
+<span class="fc" id="L70">  }</span>
+
+  /** Returns an immutable snapshot of the bundled guides. */
+  @SuppressFBWarnings(
+      value = &quot;EI_EXPOSE_REP&quot;,
+      justification = &quot;Guides list is created as an unmodifiable snapshot&quot;)
+  public List&lt;GuideDoc&gt; listGuides() {
+<span class="nc" id="L77">    return guides;</span>
+  }
+
+  /**
+   * Looks up a guide by its identifier.
+   *
+   * @param id the slug of the desired guide
+   * @return the guide metadata when present
+   */
+  public Optional&lt;GuideDoc&gt; findGuide(String id) {
+<span class="nc" id="L87">    return Optional.ofNullable(guidesById.get(id));</span>
+  }
+
+  /**
+   * Loads the markdown content for the provided guide identifier.
+   *
+   * @param id the slug of the guide to load
+   * @return the raw markdown content
+   * @throws IOException when the guide resource cannot be read
+   */
+  public String loadGuide(String id) throws IOException {
+<span class="nc" id="L98">    GuideDoc guide = guidesById.get(id);</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">    if (guide == null) {</span>
+<span class="nc" id="L100">      throw new IllegalArgumentException(&quot;Unknown guide: &quot; + id);</span>
+    }
+<span class="nc" id="L102">    try (BufferedReader reader =</span>
+        new BufferedReader(
+<span class="nc" id="L104">            new InputStreamReader(guide.resource().getInputStream(), StandardCharsets.UTF_8))) {</span>
+<span class="nc" id="L105">      return reader.lines().collect(Collectors.joining(&quot;\n&quot;));</span>
+    }
+  }
+
+  private static String toId(String filename) {
+<span class="fc" id="L110">    String base = stripExtension(filename);</span>
+<span class="fc" id="L111">    String slug = base.replaceAll(&quot;[^A-Za-z0-9]+&quot;, &quot;-&quot;);</span>
+<span class="fc" id="L112">    slug = slug.replaceAll(&quot;^-+&quot;, &quot;&quot;).replaceAll(&quot;-+$&quot;, &quot;&quot;);</span>
+<span class="fc" id="L113">    return slug.toLowerCase(Locale.ROOT);</span>
+  }
+
+  private static String toTitle(String filename) {
+<span class="fc" id="L117">    String base = stripExtension(filename);</span>
+<span class="fc" id="L118">    return base.replace('_', ' ').replace('-', ' ');</span>
+  }
+
+  private static String stripExtension(String filename) {
+<span class="fc" id="L122">    int dot = filename.lastIndexOf('.');</span>
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">    return dot &gt;= 0 ? filename.substring(0, dot) : filename;</span>
+  }
+
+  /** Immutable metadata describing a bundled guide. */
+<span class="fc" id="L127">  public record GuideDoc(String id, String title, String description, Resource resource) {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

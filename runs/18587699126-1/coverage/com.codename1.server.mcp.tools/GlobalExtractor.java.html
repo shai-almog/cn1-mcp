@@ -1,0 +1,358 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GlobalExtractor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mcp</a> &gt; <a href="index.source.html" class="el_package">com.codename1.server.mcp.tools</a> &gt; <span class="el_source">GlobalExtractor.java</span></div><h1>GlobalExtractor.java</h1><pre class="source lang-java linenums">package com.codename1.server.mcp.tools;
+
+import java.io.ByteArrayInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** Extracts binary archives and resources into a shared cache with process-safe locking. */
+public class GlobalExtractor {
+<span class="fc" id="L34">  private static final Logger LOG = LoggerFactory.getLogger(GlobalExtractor.class);</span>
+<span class="fc" id="L35">  private static final ConcurrentHashMap&lt;String, ReentrantLock&gt; LOCAL_LOCKS =</span>
+      new ConcurrentHashMap&lt;&gt;();
+<span class="fc" id="L37">  private static final Method ZIP_GET_UNIX_MODE = resolveMethod(&quot;getUnixMode&quot;);</span>
+<span class="fc" id="L38">  private static final Method ZIP_GET_EXTERNAL_ATTRIBUTES = resolveMethod(&quot;getExternalAttributes&quot;);</span>
+
+  private final Path cacheDir;
+  private final String versionTag;
+
+  /**
+   * Creates a new extractor rooted at the given cache directory.
+   *
+   * @param cacheDir the directory used to store cached artifacts
+   * @param versionTag a tag appended to cache directories to prevent collisions
+   */
+<span class="fc" id="L49">  public GlobalExtractor(String cacheDir, String versionTag) {</span>
+<span class="fc" id="L50">    this.cacheDir = Paths.get(Objects.requireNonNull(cacheDir));</span>
+<span class="fc" id="L51">    this.versionTag = Objects.requireNonNull(versionTag);</span>
+<span class="fc" id="L52">  }</span>
+
+  /** Make overridable for tests. */
+  protected byte[] readResource(String path) throws IOException {
+<span class="fc" id="L56">    try (InputStream in = GlobalExtractor.class.getResourceAsStream(path)) {</span>
+<span class="pc bpc" id="L57" title="1 of 2 branches missed.">      if (in == null) {</span>
+<span class="nc" id="L58">        throw new FileNotFoundException(&quot;Resource not found: &quot; + path);</span>
+      }
+<span class="fc" id="L60">      return in.readAllBytes();</span>
+    }
+  }
+
+  /**
+   * Ensures the specified classpath resource is cached on disk.
+   *
+   * @param resourcePath the classpath resource path
+   * @return the cached file path
+   */
+  public Path ensureFile(String resourcePath) throws IOException {
+<span class="fc" id="L71">    byte[] bytes = readResource(resourcePath);</span>
+<span class="fc" id="L72">    String hash = sha256(bytes).substring(0, 12);</span>
+
+<span class="fc" id="L74">    Path base = cacheDir.resolve(&quot;libs&quot;).resolve(versionTag + &quot;-&quot; + hash);</span>
+<span class="fc" id="L75">    Files.createDirectories(base);</span>
+
+<span class="fc" id="L77">    Path fileName = Path.of(resourcePath).getFileName();</span>
+<span class="pc bpc" id="L78" title="1 of 2 branches missed.">    if (fileName == null) {</span>
+<span class="nc" id="L79">      throw new IOException(&quot;Resource path has no filename: &quot; + resourcePath);</span>
+    }
+<span class="fc" id="L81">    Path out = base.resolve(fileName.toString());</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">    if (Files.exists(out)) {</span>
+<span class="fc" id="L83">      LOG.debug(&quot;Resource {} already extracted at {}&quot;, resourcePath, out);</span>
+<span class="fc" id="L84">      return out;</span>
+    }
+
+<span class="fc" id="L87">    Path lockPath = base.resolve(&quot;.extract.lock&quot;);</span>
+<span class="fc" id="L88">    ReentrantLock local =</span>
+<span class="fc" id="L89">        LOCAL_LOCKS.computeIfAbsent(lockPath.toString(), key -&gt; new ReentrantLock());</span>
+
+<span class="fc" id="L91">    local.lock();</span>
+<span class="fc" id="L92">    try (FileChannel channel =</span>
+<span class="fc" id="L93">            FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);</span>
+<span class="fc" id="L94">        FileLock ignored = channel.lock()) {</span>
+      // OS-level lock for cross-process safety.
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">      if (!Files.exists(out)) {</span>
+<span class="fc" id="L97">        LOG.info(&quot;Extracting resource {} to {}&quot;, resourcePath, out);</span>
+<span class="fc" id="L98">        Path tmp = Files.createTempFile(base, &quot;.res&quot;, &quot;.tmp&quot;);</span>
+<span class="fc" id="L99">        Files.write(tmp, bytes, StandardOpenOption.TRUNCATE_EXISTING);</span>
+<span class="fc" id="L100">        Files.move(tmp, out, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);</span>
+      }
+    } finally {
+<span class="fc" id="L103">      local.unlock();</span>
+    }
+<span class="fc" id="L105">    return out;</span>
+  }
+
+  /**
+   * Ensures the given classpath archive resource is extracted into the cache.
+   *
+   * @param archiveResourcePath the classpath resource representing the archive
+   * @param folderName the target directory name within the cache
+   * @return the extracted archive root
+   */
+  public Path ensureArchiveExtracted(String archiveResourcePath, String folderName)
+      throws IOException {
+<span class="fc" id="L117">    byte[] bytes = readResource(archiveResourcePath);</span>
+<span class="fc" id="L118">    ArchiveType type = ArchiveType.fromName(archiveResourcePath);</span>
+<span class="fc" id="L119">    String identifier = archiveResourcePath + &quot;:&quot; + sha256(bytes);</span>
+<span class="fc" id="L120">    return ensureArchiveExtracted(</span>
+<span class="fc" id="L121">        identifier, type, () -&gt; new ByteArrayInputStream(bytes), folderName);</span>
+  }
+
+  private Path ensureArchiveExtracted(
+      String identifier, ArchiveType type, IoSupplier&lt;InputStream&gt; supplier, String folderName)
+      throws IOException {
+<span class="fc" id="L127">    String hash = sha256(identifier).substring(0, 12);</span>
+
+<span class="fc" id="L129">    Path parent = cacheDir.resolve(&quot;jdks&quot;).resolve(versionTag + &quot;-&quot; + hash);</span>
+<span class="fc" id="L130">    Path destRoot = parent.resolve(folderName);</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">    if (Files.exists(destRoot)) {</span>
+<span class="fc" id="L132">      LOG.debug(&quot;Archive {} already extracted at {}&quot;, identifier, destRoot);</span>
+<span class="fc" id="L133">      return destRoot;</span>
+    }
+
+<span class="fc" id="L136">    Path lockPath = parent.resolve(&quot;.extract.lock&quot;);</span>
+<span class="fc" id="L137">    ReentrantLock local =</span>
+<span class="fc" id="L138">        LOCAL_LOCKS.computeIfAbsent(lockPath.toString(), key -&gt; new ReentrantLock());</span>
+
+<span class="fc" id="L140">    local.lock();</span>
+    try {
+<span class="fc" id="L142">      Files.createDirectories(parent);</span>
+<span class="fc" id="L143">      try (FileChannel channel =</span>
+<span class="fc" id="L144">              FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);</span>
+<span class="fc" id="L145">          FileLock ignored = channel.lock()) {</span>
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">        if (Files.exists(destRoot)) {</span>
+<span class="nc" id="L147">          return destRoot;</span>
+        }
+
+<span class="fc" id="L150">        Path archivePath = parent.resolve(&quot;archive&quot; + type.extension);</span>
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        if (!Files.exists(archivePath)) {</span>
+<span class="fc" id="L152">          Path tmpArchive = Files.createTempFile(parent, &quot;download-&quot;, type.extension);</span>
+<span class="fc" id="L153">          try (InputStream in = supplier.get();</span>
+<span class="fc" id="L154">              OutputStream out =</span>
+<span class="fc" id="L155">                  Files.newOutputStream(tmpArchive, StandardOpenOption.TRUNCATE_EXISTING)) {</span>
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">            if (in == null) {</span>
+<span class="nc" id="L157">              throw new IOException(&quot;Archive supplier returned null stream for &quot; + identifier);</span>
+            }
+<span class="fc" id="L159">            in.transferTo(out);</span>
+          }
+<span class="fc" id="L161">          Files.move(</span>
+              tmpArchive,
+              archivePath,
+              StandardCopyOption.ATOMIC_MOVE,
+              StandardCopyOption.REPLACE_EXISTING);
+<span class="fc" id="L166">          LOG.info(&quot;Fetched archive {} into {}&quot;, identifier, archivePath);</span>
+        }
+
+<span class="fc" id="L169">        Path tmpRoot = Files.createTempDirectory(parent, &quot;tmp-extract-&quot;);</span>
+<span class="fc" id="L170">        boolean success = false;</span>
+        try {
+<span class="fc" id="L172">          extractArchive(archivePath, type, tmpRoot);</span>
+<span class="fc" id="L173">          Files.move(tmpRoot, destRoot, StandardCopyOption.ATOMIC_MOVE);</span>
+<span class="fc" id="L174">          LOG.info(&quot;Extracted archive {} to {}&quot;, identifier, destRoot);</span>
+<span class="fc" id="L175">          success = true;</span>
+        } finally {
+<span class="fc bfc" id="L177" title="All 2 branches covered.">          if (!success) {</span>
+<span class="fc" id="L178">            cleanupDirectory(tmpRoot);</span>
+          }
+        }
+<span class="nc bnc" id="L181" title="All 4 branches missed.">      }</span>
+    } finally {
+<span class="fc" id="L183">      local.unlock();</span>
+    }
+<span class="fc" id="L185">    return destRoot;</span>
+  }
+
+  /**
+   * Ensures the given remote archive is downloaded and extracted into the cache.
+   *
+   * @param url the URL pointing to the archive to download
+   * @param folderName the target directory name within the cache
+   * @return the extracted archive root
+   */
+  public Path ensureArchiveExtractedFromUrl(String url, String folderName) throws IOException {
+<span class="fc" id="L196">    ArchiveType type = ArchiveType.fromName(url);</span>
+<span class="fc" id="L197">    return ensureArchiveExtracted(&quot;url:&quot; + url, type, () -&gt; openUrl(url), folderName);</span>
+  }
+
+  private void extractArchive(Path archivePath, ArchiveType type, Path destRoot)
+      throws IOException {
+<span class="pc bpc" id="L202" title="1 of 3 branches missed.">    switch (type) {</span>
+<span class="fc" id="L203">      case TAR_GZ -&gt; extractTarGz(archivePath, destRoot);</span>
+<span class="fc" id="L204">      case ZIP -&gt; extractZip(archivePath, destRoot);</span>
+<span class="nc" id="L205">      default -&gt; throw new IllegalArgumentException(&quot;Unsupported archive type: &quot; + type);</span>
+    }
+<span class="fc" id="L207">  }</span>
+
+  private void extractTarGz(Path archivePath, Path destRoot) throws IOException {
+<span class="fc" id="L210">    try (InputStream in = Files.newInputStream(archivePath);</span>
+<span class="fc" id="L211">        GzipCompressorInputStream gzi = new GzipCompressorInputStream(in);</span>
+<span class="fc" id="L212">        TarArchiveInputStream tar = new TarArchiveInputStream(gzi)) {</span>
+
+      TarArchiveEntry e;
+<span class="fc bfc" id="L215" title="All 2 branches covered.">      while ((e = tar.getNextTarEntry()) != null) {</span>
+<span class="fc" id="L216">        Path out = destRoot.resolve(e.getName()).normalize();</span>
+<span class="pc bpc" id="L217" title="1 of 2 branches missed.">        if (!out.startsWith(destRoot)) {</span>
+<span class="nc" id="L218">          throw new IOException(&quot;Zip Slip detected: &quot; + out);</span>
+        }
+<span class="fc bfc" id="L220" title="All 2 branches covered.">        if (e.isDirectory()) {</span>
+<span class="fc" id="L221">          Files.createDirectories(out);</span>
+        } else {
+<span class="fc" id="L223">          Path parent = out.getParent();</span>
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">          if (parent != null) {</span>
+<span class="fc" id="L225">            Files.createDirectories(parent);</span>
+          }
+<span class="fc" id="L227">          try (OutputStream os = Files.newOutputStream(out)) {</span>
+<span class="fc" id="L228">            tar.transferTo(os);</span>
+          }
+<span class="fc bfc" id="L230" title="All 2 branches covered.">          if ((e.getMode() &amp; 0x40) != 0) {</span>
+<span class="fc" id="L231">            out.toFile().setExecutable(true);</span>
+          }
+        }
+<span class="fc" id="L234">      }</span>
+    }
+<span class="fc" id="L236">  }</span>
+
+  private void extractZip(Path archivePath, Path destRoot) throws IOException {
+<span class="fc" id="L239">    try (InputStream in = Files.newInputStream(archivePath);</span>
+<span class="fc" id="L240">        ZipInputStream zip = new ZipInputStream(in)) {</span>
+      ZipEntry entry;
+<span class="fc bfc" id="L242" title="All 2 branches covered.">      while ((entry = zip.getNextEntry()) != null) {</span>
+<span class="fc" id="L243">        Path out = destRoot.resolve(entry.getName()).normalize();</span>
+<span class="fc bfc" id="L244" title="All 2 branches covered.">        if (!out.startsWith(destRoot)) {</span>
+<span class="fc" id="L245">          throw new IOException(&quot;Zip Slip detected: &quot; + out);</span>
+        }
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">        if (entry.isDirectory()) {</span>
+<span class="nc" id="L248">          Files.createDirectories(out);</span>
+        } else {
+<span class="fc" id="L250">          Path parent = out.getParent();</span>
+<span class="pc bpc" id="L251" title="1 of 2 branches missed.">          if (parent != null) {</span>
+<span class="fc" id="L252">            Files.createDirectories(parent);</span>
+          }
+<span class="fc" id="L254">          try (OutputStream os = Files.newOutputStream(out)) {</span>
+<span class="fc" id="L255">            zip.transferTo(os);</span>
+          }
+<span class="pc bpc" id="L257" title="1 of 2 branches missed.">          if (isExecutable(entry)) {</span>
+<span class="nc" id="L258">            out.toFile().setExecutable(true);</span>
+          }
+        }
+<span class="fc" id="L261">      }</span>
+    }
+<span class="fc" id="L263">  }</span>
+
+  private static Method resolveMethod(String name) {
+    try {
+<span class="nc" id="L267">      return ZipEntry.class.getMethod(name);</span>
+<span class="fc" id="L268">    } catch (NoSuchMethodException e) {</span>
+<span class="fc" id="L269">      LOG.debug(&quot;ZipEntry method {} not available on this JDK&quot;, name);</span>
+<span class="fc" id="L270">      return null;</span>
+    }
+  }
+
+  private static boolean isExecutable(ZipEntry entry) {
+    try {
+<span class="pc bpc" id="L276" title="1 of 2 branches missed.">      if (ZIP_GET_UNIX_MODE != null) {</span>
+<span class="nc" id="L277">        int unixMode = (int) ZIP_GET_UNIX_MODE.invoke(entry);</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        if (unixMode != -1) {</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">          return (unixMode &amp; 0x40) != 0;</span>
+        }
+      }
+<span class="pc bpc" id="L282" title="1 of 2 branches missed.">      if (ZIP_GET_EXTERNAL_ATTRIBUTES != null) {</span>
+<span class="nc" id="L283">        long attrs = (long) ZIP_GET_EXTERNAL_ATTRIBUTES.invoke(entry);</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">        return ((attrs &gt;&gt; 16) &amp; 0x40) != 0;</span>
+      }
+<span class="nc" id="L286">    } catch (ReflectiveOperationException e) {</span>
+<span class="nc" id="L287">      LOG.debug(&quot;Failed to inspect permissions for zip entry {}&quot;, entry.getName(), e);</span>
+<span class="fc" id="L288">    }</span>
+<span class="fc" id="L289">    return false;</span>
+  }
+
+  private void cleanupDirectory(Path dir) {
+<span class="pc bpc" id="L293" title="2 of 4 branches missed.">    if (dir == null || !Files.exists(dir)) {</span>
+<span class="nc" id="L294">      return;</span>
+    }
+    try {
+<span class="fc" id="L297">      Files.walk(dir)</span>
+<span class="fc" id="L298">          .sorted(Comparator.reverseOrder())</span>
+<span class="fc" id="L299">          .forEach(</span>
+              path -&gt; {
+                try {
+<span class="fc" id="L302">                  Files.deleteIfExists(path);</span>
+<span class="nc" id="L303">                } catch (IOException ex) {</span>
+                  // SpotBugs: log cleanup failures; cleanup remains best-effort.
+<span class="nc" id="L305">                  LOG.debug(&quot;Failed to delete cached artifact {}&quot;, path, ex);</span>
+<span class="fc" id="L306">                }</span>
+<span class="fc" id="L307">              });</span>
+<span class="nc" id="L308">    } catch (IOException ex) {</span>
+<span class="nc" id="L309">      LOG.debug(&quot;Failed to walk cache directory {}&quot;, dir, ex);</span>
+<span class="fc" id="L310">    }</span>
+<span class="fc" id="L311">  }</span>
+
+  protected InputStream openUrl(String url) throws IOException {
+<span class="nc" id="L314">    return new URL(url).openStream();</span>
+  }
+
+  /** Supported archive formats that can be extracted into the local cache. */
+<span class="fc" id="L318">  public enum ArchiveType {</span>
+<span class="fc" id="L319">    TAR_GZ(&quot;.tar.gz&quot;),</span>
+<span class="fc" id="L320">    ZIP(&quot;.zip&quot;);</span>
+
+    private final String extension;
+
+<span class="fc" id="L324">    ArchiveType(String extension) {</span>
+<span class="fc" id="L325">      this.extension = extension;</span>
+<span class="fc" id="L326">    }</span>
+
+    static ArchiveType fromName(String name) {
+<span class="fc" id="L329">      String lower = name.toLowerCase(Locale.ROOT);</span>
+<span class="fc bfc" id="L330" title="All 4 branches covered.">      if (lower.endsWith(&quot;.tar.gz&quot;) || lower.endsWith(&quot;.tgz&quot;)) {</span>
+<span class="fc" id="L331">        return TAR_GZ;</span>
+      }
+<span class="fc bfc" id="L333" title="All 2 branches covered.">      if (lower.endsWith(&quot;.zip&quot;)) {</span>
+<span class="fc" id="L334">        return ZIP;</span>
+      }
+<span class="fc" id="L336">      throw new IllegalArgumentException(&quot;Unsupported archive type: &quot; + name);</span>
+    }
+  }
+
+  @FunctionalInterface
+  private interface IoSupplier&lt;T&gt; {
+    T get() throws IOException;
+  }
+
+  private static String sha256(String s) {
+<span class="fc" id="L346">    return sha256(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));</span>
+  }
+
+  private static String sha256(byte[] data) {
+    try {
+<span class="fc" id="L351">      MessageDigest md = MessageDigest.getInstance(&quot;SHA-256&quot;);</span>
+<span class="fc" id="L352">      return HexFormat.of().formatHex(md.digest(data));</span>
+<span class="nc" id="L353">    } catch (Exception e) {</span>
+<span class="nc" id="L354">      throw new RuntimeException(e);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

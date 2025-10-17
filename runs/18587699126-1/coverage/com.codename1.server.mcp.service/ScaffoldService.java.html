@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ScaffoldService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mcp</a> &gt; <a href="index.source.html" class="el_package">com.codename1.server.mcp.service</a> &gt; <span class="el_source">ScaffoldService.java</span></div><h1>ScaffoldService.java</h1><pre class="source lang-java linenums">package com.codename1.server.mcp.service;
+
+import com.codename1.server.mcp.dto.FileEntry;
+import com.codename1.server.mcp.dto.ScaffoldRequest;
+import com.codename1.server.mcp.dto.ScaffoldResponse;
+import java.util.ArrayList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/** Generates a minimal Codename One application scaffold for quick-start projects. */
+@Service
+<span class="fc" id="L13">public class ScaffoldService {</span>
+<span class="fc" id="L14">  private static final Logger LOG = LoggerFactory.getLogger(ScaffoldService.class);</span>
+
+  /**
+   * Produces the scaffold files for the provided package/name combination.
+   *
+   * @param req scaffold request containing package and application name metadata
+   * @return generated scaffold response
+   */
+  public ScaffoldResponse scaffold(ScaffoldRequest req) {
+<span class="fc" id="L23">    String pkg = req.pkg();</span>
+<span class="fc" id="L24">    String name = req.name();</span>
+
+<span class="fc" id="L26">    LOG.info(&quot;Generating scaffold for package={} name={}&quot;, pkg, name);</span>
+
+<span class="fc" id="L28">    var files = new ArrayList&lt;FileEntry&gt;();</span>
+<span class="fc" id="L29">    files.add(new FileEntry(&quot;pom.xml&quot;, pom()));</span>
+<span class="fc" id="L30">    files.add(</span>
+        new FileEntry(
+<span class="fc" id="L32">            &quot;src/main/java/&quot; + pkg.replace('.', '/') + &quot;/MyApplication.java&quot;, appJava(pkg, name)));</span>
+<span class="fc" id="L33">    files.add(new FileEntry(&quot;src/main/codenameone/native/android/build.gradle&quot;, &quot;// placeholder&quot;));</span>
+<span class="fc" id="L34">    files.add(new FileEntry(&quot;src/main/codenameone/theme.css&quot;, themeCss()));</span>
+<span class="fc" id="L35">    files.add(new FileEntry(&quot;src/main/codenameone/codenameone_settings.properties&quot;, settings()));</span>
+<span class="fc" id="L36">    ScaffoldResponse response = new ScaffoldResponse(files);</span>
+<span class="fc" id="L37">    LOG.info(&quot;Scaffold generated with {} files&quot;, response.files().size());</span>
+<span class="fc" id="L38">    return response;</span>
+  }
+
+  private String pom() {
+<span class="fc" id="L42">    return &quot;&quot;&quot;</span>
+            &lt;!-- Minimal CN1 Maven skeleton; fill versions/plugins to match your setup --&gt;
+            &lt;project xmlns=&quot;http://maven.apache.org/POM/4.0.0&quot;&gt;
+              &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+              &lt;groupId&gt;com.example&lt;/groupId&gt;
+              &lt;artifactId&gt;cn1app&lt;/artifactId&gt;
+              &lt;version&gt;1.0.0&lt;/version&gt;
+              &lt;properties&gt;
+                &lt;maven.compiler.source&gt;11&lt;/maven.compiler.source&gt;
+                &lt;maven.compiler.target&gt;8&lt;/maven.compiler.target&gt;
+              &lt;/properties&gt;
+              &lt;dependencies&gt;
+                &lt;dependency&gt;
+                  &lt;groupId&gt;com.codenameone&lt;/groupId&gt;
+                  &lt;artifactId&gt;CodenameOne&lt;/artifactId&gt;
+                  &lt;version&gt;latest&lt;/version&gt;
+                  &lt;scope&gt;provided&lt;/scope&gt;
+                &lt;/dependency&gt;
+              &lt;/dependencies&gt;
+            &lt;/project&gt;
+            &quot;&quot;&quot;;
+  }
+
+  private String appJava(String pkg, String name) {
+<span class="fc" id="L66">    String template =</span>
+        &quot;&quot;&quot;
+            package %s;
+            import com.codename1.ui.*;
+            import com.codename1.ui.layouts.BorderLayout;
+
+            public class MyApplication {
+              private Form current;
+              public void init(Object context) { }
+
+                public void start() {
+                  if (current != null) {
+                    current.show();
+                    return;
+                  }
+                  Form f = new Form(&quot;%s&quot;, new BorderLayout());
+                  Button btn = new Button(&quot;Hello CN1&quot;);
+                  btn.setUIID(&quot;PrimaryButton&quot;);
+                  f.add(BorderLayout.CENTER, btn);
+                  f.show();
+                }
+
+                public void stop() {
+                  current = Display.getInstance().getCurrent();
+                }
+              public void destroy() { }
+            }
+            &quot;&quot;&quot;;
+    // SpotBugs: use %n in formatted strings to honour platform-specific line endings.
+<span class="fc" id="L95">    return String.format(template.replace(&quot;\n&quot;, &quot;%n&quot;), pkg, name);</span>
+  }
+
+  private String themeCss() {
+<span class="fc" id="L99">    return &quot;&quot;&quot;</span>
+            /* Codename One CSS: compiled to theme.res */
+            Form { bgColor: white; }
+            .PrimaryButton {
+              color: white;
+              bgColor: #3A86FF;
+              padding: 2mm;
+              border-radius: 2mm;
+              margin: 2mm;
+            }
+            &quot;&quot;&quot;;
+  }
+
+  private String settings() {
+<span class="fc" id="L113">    return &quot;&quot;&quot;</span>
+            codename1.android.keystore=none
+            codename1.ios.provision=none
+            codename1.cssTheme=theme.css
+            &quot;&quot;&quot;;
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

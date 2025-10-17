@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CssCompileService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mcp</a> &gt; <a href="index.source.html" class="el_package">com.codename1.server.mcp.service</a> &gt; <span class="el_source">CssCompileService.java</span></div><h1>CssCompileService.java</h1><pre class="source lang-java linenums">package com.codename1.server.mcp.service;
+
+import com.codename1.server.mcp.dto.CssCompileRequest;
+import com.codename1.server.mcp.dto.CssCompileResponse;
+import com.codename1.server.mcp.dto.FileEntry;
+import com.codename1.server.mcp.tools.GlobalExtractor;
+import com.codename1.server.mcp.tools.Jdk8ManagerFromResource;
+import com.codename1.server.mcp.util.OsUtils;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/** Compiles Codename One CSS assets into a binary theme. */
+@Service
+public class CssCompileService {
+<span class="fc" id="L35">  private static final Logger LOG = LoggerFactory.getLogger(CssCompileService.class);</span>
+<span class="fc" id="L36">  private static final Pattern URL_PATTERN = Pattern.compile(&quot;url\\(([^)]+)\\)&quot;);</span>
+  private static final String STUB_PNG_BASE64 =
+      &quot;iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAA&quot;
+          + &quot;AAC0lEQVR42mP8/x8AAwMB/YoLYiQAAAAASUVORK5CYII=&quot;;
+  private static final String STUB_JPEG_BASE64 =
+      &quot;/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP////////////////////////////////////////&quot;
+          + &quot;////////////2wBDAf//////////////////////////////////////////////////////////&quot;
+          + &quot;////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAA&quot;
+          + &quot;AAAAAAAAAAAAAAAAAf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF+AP/EABQRAQAAAA&quot;
+          + &quot;AAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8Af//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIB&quot;
+          + &quot;AT8Af//EABQRAQAAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Af//Z&quot;;
+  private static final byte[] STUB_PNG =
+<span class="fc" id="L48">      Base64.getDecoder().decode(STUB_PNG_BASE64);</span>
+  private static final byte[] STUB_JPEG =
+<span class="fc" id="L50">      Base64.getDecoder().decode(STUB_JPEG_BASE64);</span>
+<span class="fc" id="L51">  private static final byte[] STUB_SVG =</span>
+      &quot;&lt;svg xmlns=\&quot;http://www.w3.org/2000/svg\&quot; width=\&quot;1\&quot; height=\&quot;1\&quot;&gt;&lt;/svg&gt;&quot;
+<span class="fc" id="L53">          .getBytes(StandardCharsets.UTF_8);</span>
+
+  private final GlobalExtractor extractor;
+  private final Jdk8ManagerFromResource jdk8;
+<span class="fc" id="L57">  private final Lock fontStubLock = new ReentrantLock();</span>
+<span class="fc" id="L58">  private final AtomicReference&lt;byte[]&gt; fontStub = new AtomicReference&lt;&gt;();</span>
+
+<span class="fc" id="L60">  public CssCompileService(GlobalExtractor extractor, Jdk8ManagerFromResource jdk8) {</span>
+<span class="fc" id="L61">    this.extractor = extractor;</span>
+<span class="fc" id="L62">    this.jdk8 = jdk8;</span>
+<span class="fc" id="L63">  }</span>
+
+  /**
+   * Compiles the provided CSS request into a Codename One theme resource.
+   */
+  public CssCompileResponse compile(CssCompileRequest request) {
+<span class="fc" id="L69">    Objects.requireNonNull(request, &quot;request&quot;);</span>
+    try {
+<span class="fc" id="L71">      Path designerJar = extractor.ensureFile(&quot;/cn1libs/designer.jar&quot;);</span>
+<span class="fc" id="L72">      Path javaBinary = jdk8.ensureJava8();</span>
+
+<span class="fc" id="L74">      Path workDir = Files.createTempDirectory(&quot;cn1css-&quot;);</span>
+<span class="fc" id="L75">      Path cssInput = null;</span>
+<span class="fc" id="L76">      List&lt;Path&gt; cssFiles = new ArrayList&lt;&gt;();</span>
+      try {
+        List&lt;FileEntry&gt; files =
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">            request.files() == null ? List.of() : List.copyOf(request.files());</span>
+<span class="fc bfc" id="L80" title="All 2 branches covered.">        for (FileEntry entry : files) {</span>
+<span class="fc" id="L81">          Path resolved = safeResolve(workDir, entry.path());</span>
+<span class="fc" id="L82">          Path parent = resolved.getParent();</span>
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">          if (parent != null) {</span>
+<span class="fc" id="L84">            Files.createDirectories(parent);</span>
+          }
+<span class="fc" id="L86">          Files.writeString(</span>
+<span class="fc" id="L87">              resolved, entry.content(), StandardCharsets.UTF_8);</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">          if (entry.path().equals(request.inputPath())) {</span>
+<span class="fc" id="L89">            cssInput = resolved;</span>
+          }
+<span class="pc bpc" id="L91" title="1 of 2 branches missed.">          if (entry.path().toLowerCase(Locale.ENGLISH).endsWith(&quot;.css&quot;)) {</span>
+<span class="fc" id="L92">            cssFiles.add(resolved);</span>
+          }
+<span class="fc" id="L94">        }</span>
+<span class="pc bpc" id="L95" title="1 of 2 branches missed.">        if (cssFiles.isEmpty()) {</span>
+<span class="nc" id="L96">          throw new IOException(&quot;No CSS files supplied for compilation&quot;);</span>
+        }
+<span class="pc bpc" id="L98" title="3 of 4 branches missed.">        if (cssInput == null &amp;&amp; !cssFiles.isEmpty()) {</span>
+<span class="nc" id="L99">          cssInput = cssFiles.get(0);</span>
+        }
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">        if (cssInput == null) {</span>
+<span class="nc" id="L102">          throw new IOException(&quot;No CSS input file provided&quot;);</span>
+        }
+
+        String outputName =
+<span class="pc bpc" id="L106" title="2 of 4 branches missed.">            request.outputPath() != null &amp;&amp; !request.outputPath().isBlank()</span>
+<span class="fc" id="L107">                ? request.outputPath()</span>
+<span class="pc" id="L108">                : &quot;theme.res&quot;;</span>
+<span class="fc" id="L109">        Path outputFile = safeResolve(workDir, outputName);</span>
+<span class="fc" id="L110">        Files.deleteIfExists(outputFile);</span>
+<span class="fc" id="L111">        Path outputParent = outputFile.getParent();</span>
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">        if (outputParent != null) {</span>
+<span class="fc" id="L113">          Files.createDirectories(outputParent);</span>
+        }
+
+<span class="fc" id="L116">        Files.createDirectories(workDir.resolve(&quot;target&quot;));</span>
+
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        for (Path cssFile : cssFiles) {</span>
+<span class="fc" id="L119">          ensureCssResources(workDir, cssFile, designerJar);</span>
+<span class="fc" id="L120">        }</span>
+
+<span class="fc" id="L122">        List&lt;String&gt; command = new ArrayList&lt;&gt;();</span>
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">        if (OsUtils.isLinux()) {</span>
+<span class="fc" id="L124">          Path xvfb = OsUtils.locateOnPath(&quot;xvfb-run&quot;);</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">          if (xvfb == null) {</span>
+<span class="nc" id="L126">            throw new IOException(&quot;xvfb-run command not available on PATH&quot;);</span>
+          }
+<span class="fc" id="L128">          command.add(xvfb.toString());</span>
+<span class="fc" id="L129">          command.add(&quot;-a&quot;);</span>
+        }
+<span class="fc" id="L131">        command.add(javaBinary.toString());</span>
+<span class="fc" id="L132">        command.add(&quot;-cp&quot;);</span>
+<span class="fc" id="L133">        command.add(designerJar.toString());</span>
+<span class="fc" id="L134">        command.add(&quot;com.codename1.designer.css.CN1CSSCLI&quot;);</span>
+<span class="fc" id="L135">        command.add(&quot;-i&quot;);</span>
+<span class="fc" id="L136">        command.add(cssInput.toString());</span>
+<span class="fc" id="L137">        command.add(&quot;-o&quot;);</span>
+<span class="fc" id="L138">        command.add(outputFile.toString());</span>
+
+<span class="fc" id="L140">        LOG.info(&quot;Running CSS compiler: {}&quot;, command);</span>
+<span class="fc" id="L141">        ProcessBuilder pb = new ProcessBuilder(command);</span>
+<span class="fc" id="L142">        pb.directory(workDir.toFile());</span>
+<span class="fc" id="L143">        pb.redirectErrorStream(true);</span>
+<span class="fc" id="L144">        Process process = pb.start();</span>
+        String log;
+<span class="fc" id="L146">        try (InputStream in = process.getInputStream()) {</span>
+<span class="fc" id="L147">          log = new String(in.readAllBytes(), StandardCharsets.UTF_8);</span>
+        }
+<span class="fc" id="L149">        int exit = process.waitFor();</span>
+<span class="pc bpc" id="L150" title="2 of 4 branches missed.">        boolean ok = exit == 0 &amp;&amp; Files.exists(outputFile);</span>
+<span class="fc" id="L151">        LOG.info(&quot;CSS compile finished with exitCode={} ok={}&quot;, exit, ok);</span>
+<span class="fc" id="L152">        return new CssCompileResponse(ok, log);</span>
+      } finally {
+<span class="fc" id="L154">        cleanup(workDir);</span>
+      }
+<span class="nc" id="L156">    } catch (IOException e) {</span>
+<span class="nc" id="L157">      LOG.error(&quot;CSS compile failed&quot;, e);</span>
+<span class="nc" id="L158">      return new CssCompileResponse(false, e.toString());</span>
+<span class="nc" id="L159">    } catch (InterruptedException e) {</span>
+<span class="nc" id="L160">      Thread.currentThread().interrupt();</span>
+<span class="nc" id="L161">      LOG.error(&quot;CSS compile interrupted&quot;, e);</span>
+<span class="nc" id="L162">      return new CssCompileResponse(false, e.toString());</span>
+    }
+  }
+
+  private Path safeResolve(Path root, String relative) throws IOException {
+<span class="fc" id="L167">    Path resolved = root.resolve(relative).normalize();</span>
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">    if (!resolved.startsWith(root)) {</span>
+<span class="nc" id="L169">      throw new IOException(&quot;Attempt to escape workspace for path &quot; + relative);</span>
+    }
+<span class="fc" id="L171">    return resolved;</span>
+  }
+
+  private void ensureCssResources(Path workRoot, Path cssFile, Path designerJar)
+      throws IOException {
+<span class="fc" id="L176">    String css = Files.readString(cssFile, StandardCharsets.UTF_8);</span>
+<span class="fc" id="L177">    Matcher matcher = URL_PATTERN.matcher(css);</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">    while (matcher.find()) {</span>
+<span class="fc" id="L179">      String raw = matcher.group(1).trim();</span>
+<span class="pc bpc" id="L180" title="1 of 2 branches missed.">      if (raw.isEmpty()) {</span>
+<span class="nc" id="L181">        continue;</span>
+      }
+<span class="pc bpc" id="L183" title="1 of 2 branches missed.">      if (raw.startsWith(&quot;data:&quot;)) {</span>
+<span class="nc" id="L184">        continue;</span>
+      }
+<span class="pc bpc" id="L186" title="1 of 2 branches missed.">      if (raw.startsWith(&quot;#&quot;)) {</span>
+<span class="nc" id="L187">        continue;</span>
+      }
+<span class="fc" id="L189">      String cleaned = raw;</span>
+<span class="pc bpc" id="L190" title="3 of 4 branches missed.">      if ((cleaned.startsWith(&quot;\&quot;&quot;) &amp;&amp; cleaned.endsWith(&quot;\&quot;&quot;))</span>
+<span class="pc bpc" id="L191" title="2 of 4 branches missed.">          || (cleaned.startsWith(&quot;'&quot;) &amp;&amp; cleaned.endsWith(&quot;'&quot;))) {</span>
+<span class="fc" id="L192">        cleaned = cleaned.substring(1, cleaned.length() - 1);</span>
+      }
+<span class="pc bpc" id="L194" title="2 of 4 branches missed.">      if (cleaned.startsWith(&quot;http://&quot;) || cleaned.startsWith(&quot;https://&quot;)) {</span>
+<span class="nc" id="L195">        continue;</span>
+      }
+<span class="fc" id="L197">      Path cssParent = cssFile.getParent();</span>
+<span class="pc bpc" id="L198" title="1 of 2 branches missed.">      if (cssParent == null) {</span>
+<span class="nc" id="L199">        cssParent = cssFile.getFileSystem().getPath(&quot;&quot;);</span>
+      }
+<span class="fc" id="L201">      Path resolved =</span>
+<span class="fc" id="L202">          safeResolve(workRoot, cssParent.resolve(cleaned).toString());</span>
+<span class="pc bpc" id="L203" title="1 of 2 branches missed.">      if (Files.exists(resolved)) {</span>
+<span class="nc" id="L204">        continue;</span>
+      }
+<span class="fc" id="L206">      Path parent = resolved.getParent();</span>
+<span class="pc bpc" id="L207" title="1 of 2 branches missed.">      if (parent != null) {</span>
+<span class="fc" id="L208">        Files.createDirectories(parent);</span>
+      }
+<span class="fc" id="L210">      byte[] content = stubContentFor(cleaned, designerJar);</span>
+<span class="fc" id="L211">      Files.write(</span>
+          resolved,
+          content,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.TRUNCATE_EXISTING);
+<span class="fc" id="L216">    }</span>
+<span class="fc" id="L217">  }</span>
+
+  private byte[] stubContentFor(String path, Path designerJar) throws IOException {
+<span class="fc" id="L220">    String lower = path.toLowerCase(Locale.ENGLISH);</span>
+<span class="pc bpc" id="L221" title="1 of 4 branches missed.">    if (lower.endsWith(&quot;.png&quot;) || lower.endsWith(&quot;.gif&quot;)) {</span>
+<span class="fc" id="L222">      return STUB_PNG;</span>
+    }
+<span class="pc bpc" id="L224" title="2 of 4 branches missed.">    if (lower.endsWith(&quot;.jpg&quot;) || lower.endsWith(&quot;.jpeg&quot;)) {</span>
+<span class="nc" id="L225">      return STUB_JPEG;</span>
+    }
+<span class="pc bpc" id="L227" title="1 of 2 branches missed.">    if (lower.endsWith(&quot;.svg&quot;)) {</span>
+<span class="nc" id="L228">      return STUB_SVG;</span>
+    }
+<span class="pc bpc" id="L230" title="3 of 4 branches missed.">    if (lower.endsWith(&quot;.ttf&quot;) || lower.endsWith(&quot;.otf&quot;)) {</span>
+<span class="fc" id="L231">      return loadFontStub(designerJar);</span>
+    }
+<span class="nc" id="L233">    return new byte[0];</span>
+  }
+
+  private byte[] loadFontStub(Path designerJar) throws IOException {
+<span class="fc" id="L237">    byte[] cached = fontStub.get();</span>
+<span class="pc bpc" id="L238" title="1 of 2 branches missed.">    if (cached != null) {</span>
+<span class="nc" id="L239">      return cached;</span>
+    }
+<span class="fc" id="L241">    fontStubLock.lock();</span>
+    try {
+<span class="fc" id="L243">      byte[] existing = fontStub.get();</span>
+<span class="pc bpc" id="L244" title="1 of 2 branches missed.">      if (existing != null) {</span>
+<span class="nc" id="L245">        return existing;</span>
+      }
+<span class="fc" id="L247">      try (InputStream in = Files.newInputStream(designerJar);</span>
+<span class="fc" id="L248">          ZipInputStream zip = new ZipInputStream(in)) {</span>
+        ZipEntry entry;
+<span class="pc bpc" id="L250" title="1 of 2 branches missed.">        while ((entry = zip.getNextEntry()) != null) {</span>
+<span class="fc bfc" id="L251" title="All 2 branches covered.">          if (!entry.isDirectory()</span>
+<span class="fc bfc" id="L252" title="All 2 branches covered.">              &amp;&amp; entry.getName().equals(&quot;com/codename1/impl/javase/Roboto-Regular.ttf&quot;)) {</span>
+<span class="fc" id="L253">            byte[] data = zip.readAllBytes();</span>
+<span class="fc" id="L254">            fontStub.set(data);</span>
+<span class="fc" id="L255">            return data;</span>
+          }
+        }
+<span class="pc bpc" id="L258" title="1 of 2 branches missed.">      }</span>
+<span class="nc" id="L259">      throw new IOException(&quot;Failed to locate Roboto-Regular.ttf inside designer.jar&quot;);</span>
+    } finally {
+<span class="fc" id="L261">      fontStubLock.unlock();</span>
+    }
+  }
+
+  private void cleanup(Path dir) {
+<span class="pc bpc" id="L266" title="1 of 2 branches missed.">    if (dir == null) {</span>
+<span class="nc" id="L267">      return;</span>
+    }
+    try {
+<span class="fc" id="L270">      Files.walk(dir)</span>
+<span class="fc" id="L271">          .sorted(Comparator.reverseOrder())</span>
+<span class="fc" id="L272">          .forEach(</span>
+              path -&gt; {
+                try {
+<span class="fc" id="L275">                  Files.deleteIfExists(path);</span>
+<span class="nc" id="L276">                } catch (IOException ex) {</span>
+                  // SpotBugs: log cleanup issues instead of silently swallowing them.
+<span class="nc" id="L278">                  LOG.debug(&quot;Failed to delete temporary path {}&quot;, path, ex);</span>
+<span class="fc" id="L279">                }</span>
+<span class="fc" id="L280">              });</span>
+<span class="nc" id="L281">    } catch (IOException ex) {</span>
+      // SpotBugs: deletion failures should be visible during troubleshooting but not fatal.
+<span class="nc" id="L283">      LOG.debug(&quot;Failed to walk temporary directory {}&quot;, dir, ex);</span>
+<span class="fc" id="L284">    }</span>
+<span class="fc" id="L285">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>
