@@ -22,9 +22,9 @@ import com.codename1.server.mcp.service.LintService;
 import com.codename1.server.mcp.service.NativeStubService;
 import com.codename1.server.mcp.service.ScaffoldService;
 import com.codename1.server.mcp.service.SnippetService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
-import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -138,7 +138,8 @@ public class CodenameOneMcpTools {
       @McpToolParam(description = "Display name for the project", required = true) String name,
       @McpToolParam(description = "Base Java package for generated sources", required = true)
           String pkg,
-      @McpToolParam(description = "Optional feature identifiers to include") List<String> features) {
+      @McpToolParam(description = "Optional feature identifiers to include")
+          List<String> features) {
     ScaffoldResponse response =
         scaffoldService.scaffold(new ScaffoldRequest(name, pkg, features));
     return structuredResult(response);
@@ -152,7 +153,8 @@ public class CodenameOneMcpTools {
    */
   @McpTool(name = "cn1_explain_violation", description = "Explain a Codename One lint rule")
   public McpSchema.CallToolResult explain(
-      @McpToolParam(description = "Codename One lint rule identifier", required = true) String ruleId) {
+      @McpToolParam(description = "Codename One lint rule identifier", required = true)
+          String ruleId) {
     ExplainResponse response = snippetService.explain(ruleId);
     return structuredResult(response);
   }
@@ -180,7 +182,8 @@ public class CodenameOneMcpTools {
   @McpTool(name = "cn1_auto_fix", description = "Auto-fix common Codename One issues")
   public McpSchema.CallToolResult autoFix(
       @McpToolParam(description = "Source code to patch", required = true) String code,
-      @McpToolParam(description = "Diagnostics describing issues to fix") List<LintDiag> diagnostics) {
+      @McpToolParam(description = "Diagnostics describing issues to fix")
+          List<LintDiag> diagnostics) {
     String source = code;
     if (source == null) {
       source = "";
